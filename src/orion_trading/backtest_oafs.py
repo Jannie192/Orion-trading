@@ -88,6 +88,7 @@ def run_oafs_backtest(frames, instrument, config=None):
         distance = abs(plan.entry - plan.stop)
         pnl_r = ((exit_price-plan.entry)/distance if plan.direction is Direction.LONG else (plan.entry-exit_price)/distance)
         trades.append({'instrument':instrument,'direction':plan.direction.value,
+                       'regime': context.regime.value,
                        'opportunities':[o.value for o in chosen.opportunities],
                        'entry_time':event_time,'exit_time':exit_time,'entry_price':plan.entry,
                        'exit_price':exit_price,'stop_price':plan.stop,'target_price':plan.target,
