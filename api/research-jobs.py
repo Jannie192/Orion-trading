@@ -7,6 +7,7 @@ import urllib.request
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -63,8 +64,8 @@ def _trigger_worker(job_id: str, request_payload: dict) -> None:
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         try:
-            job_id = self.path.split("?", 1)[0].rstrip("/").split("/")[-1]
-            if not job_id or job_id == "research-jobs":
+            job_id = parse_qs(urlparse(self.path).query).get("job_id", [""])[0]
+            if not job_id:
                 raise ValueError("JOB_ID_REQUIRED")
             job = SupabaseStrategyStore().research_job(job_id)
             _json(self, {"mode": "research", "live_trading_enabled": False, "job": job})
@@ -74,6 +75,14 @@ class handler(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
             body = _read_json(self)
+            if body.get("action") == "update":
+                job_id = str(body.get("job_id", ""))
+                if not job_id:
+                    raise ValueError("JOB_ID_REQUIRED")
+                allowed = {"status", "progress", "stage", "result", "error", "started_at", "completed_at", "updated_at"}
+                patch = {k: body[k] for k in allowed if k in body}
+                job = SupabaseStrategyStore().update_research_job(job_id, patch)
+                return _json(self, {"mode": "research", "live_trading_enabled": False, "job": job})
             request_payload = body.get("request") if isinstance(body.get("request"), dict) else body
             instrument = str(request_payload.get("instrument", "BTCUSDT")).upper()
             timeframe = str(request_payload.get("timeframe", "H1")).upper()
