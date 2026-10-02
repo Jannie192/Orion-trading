@@ -45,6 +45,14 @@ class SupabaseStrategyStore:
             headers={**self.headers, "Prefer": "return=representation"})
         return rows[0]
 
+    def create_insight(self, payload: dict[str, Any]) -> dict[str, Any]:
+        rows = self._request("POST", "research_insights", json=payload,
+            headers={**self.headers, "Prefer": "return=representation"})
+        return rows[0]
+
+    def insights(self, limit: int = 50) -> list[dict[str, Any]]:
+        return self._request("GET", f"research_insights?select=*&order=created_at.desc&limit={max(1,min(limit,100))}")
+
     def promote(self, strategy_id: str, status: str) -> dict[str, Any]:
         if status not in {"DRAFT","VALIDATED","PAPER_CANDIDATE","PAPER_ACTIVE"}:
             raise ValueError("INVALID_STRATEGY_STATUS")
