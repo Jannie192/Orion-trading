@@ -49,11 +49,13 @@ class PaperSignalService:
             stop=float(candidate.stop),
         )
         signal_type = candidate.opportunities[0].value if candidate.opportunities else "unknown"
+        # Supabase stores direction in lowercase; the domain model remains enum-based.
+        db_direction = candidate.direction.value.lower()
         self.store.create_order({
             "order_id": order_id,
             "instrument": candidate.instrument,
             "timeframe": timeframe,
-            "direction": candidate.direction.value,
+            "direction": db_direction,
             "units": size.units,
             "entry": float(candidate.entry),
             "stop": float(candidate.stop),
