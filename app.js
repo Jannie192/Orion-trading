@@ -127,11 +127,14 @@ async function analyzeLatestResearch(){
   const box=$("#research-engine-status"); const ex=(strategyHistory.experiments||[])[0];
   if(!ex){if(box)box.textContent="No recorded experiment is available to analyze.";return;}
   const button=$("#analyze-research"); if(button)button.disabled=true;
-  if(box)box.textContent="ORION is analyzing the recorded experiment…";
+  if(box)box.textContent="ORION is analyzing parameter sensitivity, train/test stability, and grid behavior…";
   try{
     const r=await fetch("/api/research-insights?experiment_id="+encodeURIComponent(ex.experiment_id),{cache:"no-store"});
     const d=await r.json(); if(!r.ok)throw new Error(d.error||"Analysis failed");
-    if(box)box.innerHTML="<strong>Research Intelligence</strong><br>"+d.facts.join(" ");
+    const s=(d.observed&&d.observed.sensitivity)||{};
+    const fmt=(m)=>Object.entries(m||{}).map(x=>x[0]+": "+Number(x[1]).toFixed(2)+"%").join(" • ")||"—";
+    const rows='<tr><td>Risk</td><td>'+fmt(s.risk_test_return_by_value)+'</td></tr><tr><td>ATR stop</td><td>'+fmt(s.stop_test_return_by_value)+'</td></tr><tr><td>Reward</td><td>'+fmt(s.reward_test_return_by_value)+'</td></tr>';
+    box.innerHTML='<strong>Research Intelligence</strong><div style="margin-top:8px">'+(d.facts||[]).join(" ")+'</div><div style="overflow:auto;margin-top:10px"><table class="table"><thead><tr><th>Parameter</th><th>Average observed test return by grid value</th></tr></thead><tbody>'+rows+'</tbody></table></div><div class="sub" style="margin-top:10px">Diagnostics are descriptive. ORION does not infer future performance, rank configurations, or promote a strategy automatically.</div>';
   }catch(e){if(box)box.textContent="Research analysis error: "+e.message}
   finally{if(button)button.disabled=false}
 }
