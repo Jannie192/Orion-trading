@@ -21,6 +21,7 @@ _ROUTES = {
     "/api/research-insights": "research-insights.py",
     "/api/research-iteration": "research-iteration.py",
     "/api/research-cross": "research-cross.py",
+    "/api/walk-forward": "walk-forward.py",
 }
 
 _STATIC = {
