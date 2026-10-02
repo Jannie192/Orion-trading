@@ -51,6 +51,38 @@ def run(instrument: str, timeframe: str, days: int):
     for trade in result.trades:
         equity += float(trade.pnl)
         payload["equity_curve"].append({"time": trade.exit_time.isoformat(), "equity": equity})
+    replay = []
+    trade_by_entry = {t.entry_time.isoformat(): t for t in result.trades}
+    trade_by_exit = {t.exit_time.isoformat(): t for t in result.trades}
+    running_equity = float(result.initial_equity)
+    peak_equity = running_equity
+    trade_index = 0
+    if not candles.empty:
+        for ts, row in candles.sort_index().iterrows():
+            key = ts.to_pydatetime().isoformat()
+            exited = trade_by_exit.get(key)
+            if exited is not None:
+                running_equity += float(exited.pnl)
+                trade_index += 1
+                peak_equity = max(peak_equity, running_equity)
+            entered = trade_by_entry.get(key)
+            action = "ENTER" if entered is not None else ("EXIT" if exited is not None else "WAIT")
+            replay.append({
+                "time": key,
+                "open": float(row["open"]),
+                "high": float(row["high"]),
+                "low": float(row["low"]),
+                "close": float(row["close"]),
+                "volume": float(row["volume"]) if "volume" in row else 0.0,
+                "equity": running_equity,
+                "drawdown_pct": ((peak_equity-running_equity)/peak_equity*100) if peak_equity else 0.0,
+                "action": action,
+                "trade_index": trade_index,
+                "trade": ({"direction": entered.direction.value, "entry": entered.entry, "exit": entered.exit,
+                           "pnl": entered.pnl, "reason": entered.reason} if entered is not None else None),
+            })
+    payload["replay"] = replay
+    payload["replay_bars"] = len(replay)
     return payload
 
 class handler(BaseHTTPRequestHandler):
