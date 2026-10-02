@@ -16,6 +16,7 @@ _ROUTES = {
     "/api/backtest": "backtest.py",
     "/api/backtest-batch": "backtest-batch.py",
     "/api/strategy-history": "strategy-history.py",
+    "/api/experiment-replay": "experiment-replay.py",
 }
 
 _STATIC = {
