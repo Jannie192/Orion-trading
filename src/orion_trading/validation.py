@@ -9,8 +9,13 @@ class Split:
     start: pd.Timestamp
     end: pd.Timestamp
 
+def _utc(value) -> pd.Timestamp:
+    ts = pd.Timestamp(value)
+    return ts.tz_localize("UTC") if ts.tzinfo is None else ts.tz_convert("UTC")
+
 def walk_forward_splits(start, end, train_days=180, test_days=60, step_days=60):
-    start=pd.Timestamp(start,tz="UTC"); end=pd.Timestamp(end,tz="UTC")
+    start = _utc(start)
+    end = _utc(end)
     splits=[]; cursor=start
     i=1
     while cursor + pd.Timedelta(days=train_days+test_days) <= end:
