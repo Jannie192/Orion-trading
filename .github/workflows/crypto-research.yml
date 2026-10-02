@@ -1,0 +1,25 @@
+name: ORION crypto research
+
+on:
+  workflow_dispatch:
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e ".[dev]"
+      - name: Run crypto research
+        run: |
+          python scripts/run_research.py             --start "2024-01-01T00:00:00Z"             --end "2026-01-01T00:00:00Z"             --provider binance             --instruments BTCUSDT ETHUSDT             --simulations 1000             --output reports/crypto
+      - name: Upload crypto research
+        uses: actions/upload-artifact@v4
+        with:
+          name: orion-crypto-research
+          path: reports/crypto/
+          if-no-files-found: error
