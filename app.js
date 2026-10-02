@@ -1,7 +1,7 @@
 const state={view:"overview",assets:["BTCUSDT","ETHUSDT"],timeframe:"1H",mode:"research",api:"/api/paper-state",scanApi:"/api/paper-scan",panels:JSON.parse(localStorage.getItem("orion-panels")||'{"equity":true,"signals":true,"research":true,"risk":true,"markets":true,"activity":true}')};
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const paper={initial_equity:10000,equity:10000,closed_trades:0,realized_pnl:0};
-let apiOnline=false,scanOnline=false,scanData={results:[],scanned_at:null},btReplayTimer=null,btReplayState=null;
+let apiOnline=false,scanOnline=false,scanData={results:[],scanned_at:null},btReplayTimer=null,btReplayState=null,strategyHistory={versions:[],experiments:[]},lastLabRun=null;
 
 function save(){localStorage.setItem("orion-panels",JSON.stringify(state.panels))}
 function chips(){
