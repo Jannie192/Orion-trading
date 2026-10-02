@@ -6,6 +6,8 @@ import pandas as pd
 from .features import calculate_features
 from .models import Direction, Regime
 
+_GRANULARITY_MINUTES = {"M15": 15, "H1": 60, "H4": 240, "D": 1440}
+
 @dataclass(frozen=True)
 class MTFContext:
     regime: Regime
@@ -31,3 +33,21 @@ def build_context(frames: dict[str, pd.DataFrame], regime: Regime, direction: Di
     h4b, h4s = _trend(frames["H4"])
     h1b, h1s = _trend(frames["H1"])
     return MTFContext(regime, direction, d1b, d1s, h4b, h4s, h1b, h1s)
+
+def align_completed_frames(frames: dict[str, pd.DataFrame], event_time: pd.Timestamp) -> dict[str, pd.DataFrame]:
+    """Align each timeframe using only candles fully completed by event_time."""
+    event_time = pd.Timestamp(event_time)
+    if event_time.tzinfo is None:
+        event_time = event_time.tz_localize("UTC")
+    else:
+        event_time = event_time.tz_convert("UTC")
+    result = {}
+    for tf, minutes in _GRANULARITY_MINUTES.items():
+        frame = frames[tf]
+        if frame.empty:
+            result[tf] = frame
+            continue
+        idx = pd.DatetimeIndex(frame.index)
+        complete_at = idx + pd.Timedelta(minutes=minutes)
+        result[tf] = frame.loc[complete_at <= event_time]
+    return result
