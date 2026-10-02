@@ -75,6 +75,25 @@ class SupabaseStrategyStore:
             raise ValueError("ITERATION_NOT_FOUND")
         return rows[0]
 
+    def create_research_job(self, payload: dict[str, Any]) -> dict[str, Any]:
+        rows = self._request("POST", "research_jobs", json=payload,
+            headers={**self.headers, "Prefer": "return=representation"})
+        return rows[0]
+
+    def research_job(self, job_id: str) -> dict[str, Any]:
+        rows = self._request("GET", f"research_jobs?select=*&job_id=eq.{job_id}&limit=1")
+        if not rows:
+            raise ValueError("RESEARCH_JOB_NOT_FOUND")
+        return rows[0]
+
+    def update_research_job(self, job_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        rows = self._request("PATCH", f"research_jobs?job_id=eq.{job_id}",
+            json=payload,
+            headers={**self.headers, "Prefer": "return=representation"})
+        if not rows:
+            raise ValueError("RESEARCH_JOB_NOT_FOUND")
+        return rows[0]
+
     def promote(self, strategy_id: str, status: str) -> dict[str, Any]:
         if status not in {"DRAFT","VALIDATED","PAPER_CANDIDATE","PAPER_ACTIVE"}:
             raise ValueError("INVALID_STRATEGY_STATUS")
