@@ -26,6 +26,12 @@ class SupabaseStrategyStore:
     def versions(self) -> list[dict[str, Any]]:
         return self._request("GET", "strategy_versions?select=*&order=updated_at.desc")
 
+    def experiment(self, experiment_id: str) -> dict[str, Any]:
+        rows = self._request("GET", f"strategy_experiments?select=*&experiment_id=eq.{experiment_id}&limit=1")
+        if not rows:
+            raise ValueError("EXPERIMENT_NOT_FOUND")
+        return rows[0]
+
     def experiments(self, limit: int = 50) -> list[dict[str, Any]]:
         return self._request("GET", f"strategy_experiments?select=*&order=created_at.desc&limit={max(1,min(limit,100))}")
 
