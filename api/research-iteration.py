@@ -46,10 +46,16 @@ def propose(experiment, previous_iterations):
     if not results:
         raise ValueError("EXPERIMENT_HAS_NO_RESULTS")
 
-    # The next grid is a controlled local perturbation around the configuration
-    # with the highest observed test return. This is a research heuristic, not
-    # a claim that the configuration will generalize to future data.
-    idx = max(range(len(results)), key=lambda i: float((results[i].get("test") or {}).get("total_return_pct", 0)))
+    # Prefer configurations with positive test return and positive train/test
+    # results, then use test return as the descriptive anchor. This is a research
+    # heuristic, not a claim that the configuration will generalize.
+    def metrics(row):
+        train = row.get("train") or {}
+        test = row.get("test") or {}
+        return float(train.get("total_return_pct", 0)), float(test.get("total_return_pct", 0)), float(test.get("max_drawdown_pct", 0))
+    robust = [i for i, row in enumerate(results) if metrics(row)[0] > 0 and metrics(row)[1] > 0]
+    pool = robust or list(range(len(results)))
+    idx = max(pool, key=lambda i: (metrics(results[i])[1], metrics(results[i])[0], -abs(metrics(results[i])[2])))
     base = results[idx]
     risk = float(base.get("risk_per_trade_pct", 0.5))
     stop = float(base.get("atr_stop_multiple", 1.5))
@@ -75,10 +81,12 @@ def propose(experiment, previous_iterations):
         "anchor_test_return_pct": test_return,
         "anchor_train_return_pct": train_return,
         "previous_run_count": len(results),
+        "robust_candidate_pool": len(robust),
+        "selection_rule": "positive_train_and_test_when_available; then descriptive test return; drawdown used as final tie-breaker",
     }
     rationale = (
         f"Generation {generation} proposes a controlled local grid around run {idx + 1}, "
-        f"which had the highest observed test return in the recorded experiment. "
+        f"which was selected from the configurations with positive train/test returns when such configurations existed, using observed test return as the primary descriptive measure. "
         f"The grid perturbs risk, ATR stop distance, and reward target one step around that "
         f"observed configuration. This narrows the next experiment without treating the "
         f"observed result as proof of future performance."
@@ -140,14 +148,18 @@ class handler(BaseHTTPRequestHandler):
                 store.update_iteration(iteration_id, {"status": "RUNNING"})
                 grid = iteration["proposed_grid"]
                 batch = _load_batch()
-                result = batch.run(
-                    iteration["instrument"],
-                    iteration["timeframe"],
-                    int(iteration["days"]),
-                    ",".join(str(x) for x in grid["risks"]),
-                    ",".join(str(x) for x in grid["stops"]),
-                    ",".join(str(x) for x in grid["rewards"]),
-                )
+                try:
+                    result = batch.run(
+                        iteration["instrument"],
+                        iteration["timeframe"],
+                        int(iteration["days"]),
+                        ",".join(str(x) for x in grid["risks"]),
+                        ",".join(str(x) for x in grid["stops"]),
+                        ",".join(str(x) for x in grid["rewards"]),
+                    )
+                except Exception:
+                    store.update_iteration(iteration_id, {"status": "REJECTED"})
+                    raise
                 experiment = store.create_experiment({
                     "strategy_name": iteration["strategy_name"],
                     "strategy_version": iteration["strategy_version"],
