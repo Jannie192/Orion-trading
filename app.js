@@ -1,8 +1,7 @@
-const state={view:"overview",assets:["BTCUSDT","ETHUSDT"],timeframe:"1H",mode:"paper",autoExecution:false,api:"/api/paper-state",scanApi:"/api/paper-scan",panels:JSON.parse(localStorage.getItem("orion-panels")||'{"equity":true,"signals":true,"research":true,"risk":true,"markets":true,"activity":true}')};
+const state={view:"overview",assets:["BTCUSDT","ETHUSDT"],timeframe:"1H",mode:"research",api:"/api/paper-state",scanApi:"/api/paper-scan",panels:JSON.parse(localStorage.getItem("orion-panels")||'{"equity":true,"signals":true,"research":true,"risk":true,"markets":true,"activity":true}')};
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
-const panelNames={equity:"Equity & performance",signals:"Active signals",research:"Research status",risk:"Risk controls",markets:"Market watch",activity:"Recent activity"};
-const paper={initial_equity:10000,equity:10000,open_orders:0,closed_trades:0,realized_pnl:0};
-let apiOnline=false,scanOnline=false,scanData={results:[],scanned_at:null};
+const paper={initial_equity:10000,equity:10000,closed_trades:0,realized_pnl:0};
+let apiOnline=false,scanOnline=false,scanData={results:[],scanned_at:null},btReplayTimer=null,btReplayState=null;
 
 function save(){localStorage.setItem("orion-panels",JSON.stringify(state.panels))}
 function chips(){
@@ -12,185 +11,73 @@ function chips(){
   $$("[data-tf]").forEach(b=>b.onclick=()=>{state.timeframe=b.dataset.tf;chips();render()});
 }
 function stat(title,value,sub,cls=""){return '<div class="card stat"><div class="card-title"><h3>'+title+"</h3></div><div class="big "+cls+'">'+value+'</div><div class="sub">'+sub+"</div></div>"}
-function activeSignals(){return scanData.results.flatMap(r=>r.candidates.map(c=>({...c,timeframe:r.timeframe}))).filter(c=>c.valid)}
-function renderOverview(){let c='<div class="grid">';
-if(state.panels.equity)c+=stat("Paper equity","$"+paper.equity.toLocaleString(),"Initial: $"+paper.initial_equity.toLocaleString());
-if(state.panels.signals){const n=activeSignals().length;c+=stat("Signals",String(n),scanOnline?"Validated scanner candidates":"Scanner unavailable",n?"":"neutral");}
-if(state.panels.research)c+=stat("Research","VALIDATION","Live capital remains disconnected","neutral");
-if(state.panels.risk)c+=stat("Risk / trade","0.50%","Hard risk veto enabled");
-if(state.panels.equity)c+='<section class="card wide"><div class="card-title"><h3>Equity curve</h3><span class="muted">Paper account</span></div><div class="chart"><div class="empty">Equity data will populate automatically as paper trades close.</div></div></section>';
-if(state.panels.risk)c+='<section class="card side"><div class="card-title"><h3>Risk guardrails</h3><span class="pill">ARMED</span></div>'+[["Mode","PAPER"],["Auto execution","DISABLED"],["Risk / trade","0.50%"],["Daily loss limit","1.50%"],["Consecutive losses","3"],["Correlated exposure","2"]].map(r=>'<div class="metric-row"><span class="muted">'+r[0]+"</span><strong>"+r[1]+"</strong></div>").join("")+"</section>";
-if(state.panels.markets)c+='<section class="card full"><div class="card-title"><h3>Market watch</h3><span class="muted">'+state.timeframe+" • "+state.assets.length+' selected</span></div><table class="table"><thead><tr><th>Instrument</th><th>Regime</th><th>Signal</th><th>State</th></tr></thead><tbody>'+state.assets.map(x=>'<tr><td><strong>'+x+"</strong></td><td class="muted">Awaiting scan</td><td>—</td><td><span class="pill">PAPER</span></td></tr>").join("")+"</tbody></table></section>";
-if(state.panels.activity)c+='<section class="card full"><div class="card-title"><h3>Scanner activity</h3><span class="muted">'+(scanData.scanned_at?new Date(scanData.scanned_at).toLocaleString():"Not scanned")+'</span></div><div class="empty">'+(scanOnline?"Market scan completed. Valid candidates are persisted as paper orders only.":"Scanner unavailable; retrying automatically.")+'</div></section>';
-return c+"</div>"}
+function activeSignals(){return (scanData.results||[]).flatMap(r=>(r.candidates||[]).map(c=>({...c,timeframe:r.timeframe}))).filter(c=>c.valid)}
+function renderOverview(){
+  let c='<div class="grid">';
+  if(state.panels.equity)c+=stat("Paper equity","$"+Number(paper.equity).toLocaleString(),"Initial: $"+Number(paper.initial_equity).toLocaleString());
+  if(state.panels.signals)c+=stat("Signals",String(activeSignals().length),scanOnline?"Validated scanner candidates":"Scanner unavailable");
+  if(state.panels.research)c+=stat("Research","ACTIVE","Historical backtests + replay","neutral");
+  if(state.panels.risk)c+=stat("Risk / trade","0.50%","Hard risk veto enabled");
+  if(state.panels.equity)c+='<section class="card wide"><div class="card-title"><h3>Equity curve</h3><span class="muted">Paper account</span></div><div class="chart"><div class="empty">Equity data will populate as paper trades close.</div></div></section>';
+  if(state.panels.risk)c+='<section class="card side"><div class="card-title"><h3>Risk guardrails</h3><span class="pill">ARMED</span></div>'+[["Mode","PAPER"],["Auto execution","DISABLED"],["Risk / trade","0.50%"],["Daily loss limit","1.50%"],["Consecutive losses","3"],["Correlated exposure","2"]].map(r=>'<div class="metric-row"><span class="muted">'+r[0]+"</span><strong>"+r[1]+"</strong></div>").join("")+"</section>";
+  if(state.panels.markets)c+='<section class="card full"><div class="card-title"><h3>Market watch</h3><span class="muted">'+state.timeframe+" • "+state.assets.length+' selected</span></div><table class="table"><thead><tr><th>Instrument</th><th>Regime</th><th>Signal</th><th>State</th></tr></thead><tbody>'+state.assets.map(x=>'<tr><td><strong>'+x+"</strong></td><td class="muted">"+(scanData.results.find(r=>r.instrument===x)?.regime||"Awaiting scan")+"</td><td>—</td><td><span class="pill">PAPER</span></td></tr>").join("")+"</tbody></table></section>";
+  if(state.panels.activity)c+='<section class="card full"><div class="card-title"><h3>Scanner activity</h3><span class="muted">'+(scanData.scanned_at?new Date(scanData.scanned_at).toLocaleString():"Not scanned")+'</span></div><div class="empty">'+(scanOnline?"Market scan completed. Valid candidates are paper-only.":"Scanner unavailable; retrying automatically.")+"</div></section>";
+  return c+"</div>";
+}
 function renderBacktests(){
-  return '<div class="grid"><section class="card full"><div class="card-title"><h3>Backtest engine</h3><span class="pill">RESEARCH ONLY</span></div><div class="sub">Walk-forward simulation using ORION signals, ATR stops, 2R targets and 0.50% risk per trade. No live orders.</div><div style="display:flex;gap:10px;margin-top:18px;flex-wrap:wrap"><select id="bt-asset"><option>BTCUSDT</option><option>ETHUSDT</option><option>EURUSD</option><option>GBPUSD</option><option>NAS100</option><option>US30</option></select><select id="bt-tf"><option>H1</option><option>H4</option><option>M15</option><option>D1</option></select><select id="bt-days"><option value="30">30 days</option><option value="90" selected>90 days</option><option value="180">180 days</option><option value="365">365 days</option></select><button class="primary" id="run-backtest">Run backtest</button></div><div id="bt-results" class="empty" style="margin-top:18px">Choose a market and run a historical simulation.</div></section></div>'
+  return '<div class="grid"><section class="card full"><div class="card-title"><h3>Backtest Lab</h3><span class="pill">RESEARCH ONLY</span></div><div class="sub">Run a historical simulation, then replay it candle-by-candle. No live orders are possible from this module.</div><div style="display:flex;gap:10px;margin-top:18px;flex-wrap:wrap"><select id="bt-asset"><option>BTCUSDT</option><option>ETHUSDT</option><option>EURUSD</option><option>GBPUSD</option><option>NAS100</option><option>US30</option></select><select id="bt-tf"><option>H1</option><option>H4</option><option>M15</option><option>D1</option></select><select id="bt-days"><option value="30">30 days</option><option value="90" selected>90 days</option><option value="180">180 days</option><option value="365">365 days</option></select><button class="primary" id="run-backtest">Run backtest</button></div><div id="bt-results" class="empty" style="margin-top:18px">Choose a market and run a historical simulation.</div></section></div>';
 }
-let btReplayTimer=null,btReplayState=null;
+function renderStrategyLab(){
+  return '<div class="grid"><section class="card full"><div class="card-title"><h3>Strategy Lab</h3><span class="pill">EXPERIMENTS</span></div><div class="sub">Run a controlled batch of the same strategy across risk, stop and reward settings. ORION stores each run in this session so you can compare configurations before paper trading.</div><div style="display:flex;gap:10px;margin-top:18px;flex-wrap:wrap"><select id="lab-asset"><option>BTCUSDT</option><option>ETHUSDT</option></select><select id="lab-tf"><option>H1</option><option>H4</option><option>M15</option></select><select id="lab-days"><option value="30">30 days</option><option value="90" selected>90 days</option><option value="180">180 days</option></select><input id="lab-risks" value="0.25,0.5,0.75" title="Risk percentages"><input id="lab-stops" value="1,1.5,2" title="ATR stop multiples"><input id="lab-rewards" value="1.5,2,3" title="Reward multiples"><button class="primary" id="run-lab">Run experiment grid</button></div><div id="lab-results" class="empty" style="margin-top:18px">Example grid: 3 risks × 3 stops × 3 rewards = 27 tests.</div></section></div>';
+}
 function renderReplay(data){
-  const box=$("#bt-results");
-  const trades=data.trade_log||[], curve=data.equity_curve||[];
-  box.innerHTML='<div class="card" style="margin-bottom:14px"><div class="card-title"><h3>Market Replay</h3><span id="bt-candle-status" class="pill">CANDLE 0</span></div><svg id="bt-market-chart" viewBox="0 0 900 300" preserveAspectRatio="none" style="width:100%;height:300px"></svg></div><div class="grid" style="margin:0"><div class="card stat"><div class="card-title"><h3>Replay</h3><span id="bt-replay-status" class="pill">READY</span></div><div class="big" id="bt-replay-equity">
-  const box=$("#bt-results"); box.textContent="Running historical simulation…";
-  try{
-    const a=$("#bt-asset").value,t=$("#bt-tf").value,d=$("#bt-days").value;
-    const r=await fetch("/api/backtest?instrument="+encodeURIComponent(a)+"&timeframe="+encodeURIComponent(t)+"&days="+d,{cache:"no-store"});
-    const data=await r.json(); if(!r.ok) throw new Error(data.error||"Backtest failed");
-    box.innerHTML='<div class="grid" style="margin:0">'+[
-      ["Final equity","$"+Number(data.final_equity).toLocaleString(undefined,{maximumFractionDigits:2})],
-      ["Return",Number(data.total_return_pct).toFixed(2)+"%"],
-      ["Trades",data.trades_count],
-      ["Win rate",Number(data.win_rate_pct).toFixed(1)+"%"],
-      ["Profit factor",Number(data.profit_factor).toFixed(2)],
-      ["Max drawdown",Number(data.max_drawdown_pct).toFixed(2)+"%"]
-    ].map(x=>'<div class="card stat"><div class="card-title"><h3>'+x[0]+'</h3></div><div class="big">'+x[1]+'</div></div>').join("")+'</div><div class="sub" style="margin-top:14px">Historical simulation only. Results can change with data, costs, slippage and execution assumptions.</div><div class="card" style="margin-top:14px"><div class="card-title"><h3>Trade-by-trade replay</h3><span class="pill">'+data.trades_count+' trades</span></div><div id="bt-trades"></div></div>';
-    renderReplay(data); const rows=(data.trade_log||[]).map((t,i)=>'<div class="activity-row"><span>#'+(i+1)+' '+t.direction+'</span><span>'+t.reason+'</span><strong>'+Number(t.pnl).toFixed(2)+'</strong></div>').join("");
-    $("#bt-trades").innerHTML=rows||'<div class="empty">No trades in this test window.</div>'; $("#bt-play").onclick=()=>{if(btReplayTimer)return;btReplayTimer=setInterval(()=>{if(!btReplayState||btReplayState.index>=btReplayState.trades.length){clearInterval(btReplayTimer);btReplayTimer=null;return}replayStep()},700)}; $("#bt-step").onclick=replayStep; $("#bt-reset").onclick=()=>{if(btReplayTimer){clearInterval(btReplayTimer);btReplayTimer=null}btReplayState.index=0;btReplayState.barIndex=0;btReplayState.equity=Number(data.initial_equity||10000);drawReplay()};
-  }catch(e){box.textContent="Backtest error: "+e.message}
-}
-function render(){
-  const title=state.view[0].toUpperCase()+state.view.slice(1);
-  $("#page-title").textContent=title;
-  $("#mode-badge").textContent=state.mode.toUpperCase();
-  $(".live-state").innerHTML='<i class="dot '+(apiOnline?"green":"amber")+'"></i> '+(apiOnline?"Paper API online":"Paper API unavailable");
-  $("#view").innerHTML=state.view==="overview"?renderOverview():state.view==="backtests"?renderBacktests():'<div class="card full"><div class="card-title"><h3>'+title+'</h3><span class="pill">CONNECTED</span></div><div class="empty">Dashboard module ready for its ORION data adapter.</div></div>'
-}
-function customize(){
-  $("#panel-toggles").innerHTML=Object.entries(panelNames).map(([k,v])=>'<div class="toggle-row"><span>'+v+'</span><button class="switch '+(state.panels[k]?"on":"")+'" data-panel="'+k+'"><i></i></button></div>').join("");
-  $$("[data-panel]").forEach(b=>b.onclick=()=>{const k=b.dataset.panel;state.panels[k]=!state.panels[k];b.classList.toggle("on",state.panels[k])});
-  $("#customize-dialog").showModal()
-}
-async function refreshScan(){
-  try{
-    const response=await fetch(state.scanApi,{cache:"no-store",headers:{"Accept":"application/json"}});
-    if(!response.ok)throw new Error("HTTP "+response.status);
-    const data=await response.json();
-    if(data.mode!=="paper"||data.live_trading_enabled!==false)throw new Error("Unsafe scanner response");
-    scanData=data; scanOnline=true;
-  }catch(error){scanOnline=false;console.warn("ORION scanner unavailable:",error)}
-  render();
-}
-async function refreshPaperState(){
-  try{
-    const response=await fetch(state.api,{cache:"no-store",headers:{"Accept":"application/json"}});
-    if(!response.ok)throw new Error("HTTP "+response.status);
-    const data=await response.json();
-    if(data.mode!=="paper"||data.live_trading_enabled!==false)throw new Error("Unsafe paper-state response");
-    Object.assign(paper,data.account||{});
-    apiOnline=true;
-  }catch(error){
-    apiOnline=false;
-    console.warn("ORION paper state unavailable:",error);
-  }
-  render();
-}
-$(".nav-item").forEach(b=>b.onclick=()=>{$(".nav-item").forEach(x=>x.classList.remove("active"));b.classList.add("active");state.view=b.dataset.view;render();if(state.view==="backtests"){$("#run-backtest").onclick=runBacktest}});
-$("#customize").onclick=customize;
-$("#refresh").onclick=async()=>{await refreshPaperState();$("#refresh").textContent="✓";setTimeout(()=>$("#refresh").textContent="↻",700)};
-$("#customize-dialog").addEventListener("close",()=>{save();render()});
-chips();
-render();
-refreshPaperState();
-refreshScan();
-setInterval(refreshPaperState,10000);
-setInterval(refreshScan,60000);
-+Number(data.initial_equity||10000).toLocaleString(undefined,{maximumFractionDigits:2})+'</div><div class="sub">Equity</div></div><div class="card stat"><div class="card-title"><h3>Progress</h3></div><div class="big" id="bt-replay-progress">0 / '+trades.length+'</div><div class="sub">Trades replayed</div></div></div><div class="card" style="margin-top:14px"><div class="card-title"><h3>Market replay</h3><div style="display:flex;gap:8px"><button class="primary" id="bt-play">▶ Play</button><button id="bt-step">Step</button><button id="bt-reset">Reset</button></div></div><div id="bt-replay-log" class="activity"></div></div><div class="card" style="margin-top:14px"><div class="card-title"><h3>Equity curve</h3></div><div style="height:180px;overflow:hidden"><svg id="bt-equity-chart" viewBox="0 0 800 180" preserveAspectRatio="none" style="width:100%;height:100%"></svg></div></div>';
-  btReplayState={data,trades,curve,index:0,barIndex:0,equity:Number(data.initial_equity||10000)};
+  const box=$("#bt-results"),trades=data.trade_log||[],bars=data.replay||[];
+  box.innerHTML='<div class="card" style="margin-bottom:14px"><div class="card-title"><h3>Market Replay</h3><span id="bt-candle-status" class="pill">CANDLE 0 / '+bars.length+'</span></div><div class="sub" id="bt-replay-time">HISTORICAL REPLAY — NOT LIVE MARKET</div><svg id="bt-market-chart" viewBox="0 0 900 320" preserveAspectRatio="none" style="width:100%;height:320px"></svg></div><div class="grid" style="margin:0"><div class="card stat"><div class="card-title"><h3>Equity</h3></div><div class="big" id="bt-replay-equity">$10,000</div><div class="sub" id="bt-replay-pnl">P&L $0.00</div></div><div class="card stat"><div class="card-title"><h3>Replay</h3><span id="bt-replay-status" class="pill">READY</span></div><div class="big" id="bt-replay-progress">0 / '+bars.length+'</div><div class="sub">Candles processed</div></div><div class="card stat"><div class="card-title"><h3>Drawdown</h3></div><div class="big" id="bt-replay-dd">0.00%</div><div class="sub" id="bt-replay-action">WAIT</div></div></div><div class="card" style="margin-top:14px"><div class="card-title"><h3>Replay controls</h3><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="primary" id="bt-play">▶ Play</button><button id="bt-step">Step</button><button id="bt-reset">Reset</button><select id="bt-speed"><option value="1600">0.25×</option><option value="700" selected>1×</option><option value="350">2×</option><option value="140">5×</option><option value="70">10×</option></select></div></div><div class="sub">Step advances exactly one historical candle. Entry/exit events and equity are synchronized to the replay.</div></div><div class="card" style="margin-top:14px"><div class="card-title"><h3>Equity curve</h3></div><div style="height:180px;overflow:hidden"><svg id="bt-equity-chart" viewBox="0 0 800 180" preserveAspectRatio="none" style="width:100%;height:100%"></svg></div></div><div class="card" style="margin-top:14px"><div class="card-title"><h3>Trade log</h3><span class="pill">'+trades.length+' trades</span></div><div id="bt-replay-log" class="activity"></div></div>';
+  btReplayState={data,index:0,barIndex:0,equity:Number(data.initial_equity||10000),peak:Number(data.initial_equity||10000),position:null};
   drawReplay();
+  $("#bt-play").onclick=()=>{if(btReplayTimer){clearInterval(btReplayTimer);btReplayTimer=null;$("#bt-play").textContent="▶ Play";return}$("#bt-play").textContent="Ⅱ Pause";btReplayTimer=setInterval(replayStep,Number($("#bt-speed").value));};
+  $("#bt-speed").onchange=()=>{if(btReplayTimer){clearInterval(btReplayTimer);btReplayTimer=setInterval(replayStep,Number($("#bt-speed").value))}};
+  $("#bt-step").onclick=replayStep;
+  $("#bt-reset").onclick=()=>{if(btReplayTimer){clearInterval(btReplayTimer);btReplayTimer=null}btReplayState.index=0;btReplayState.barIndex=0;btReplayState.equity=Number(data.initial_equity||10000);btReplayState.peak=btReplayState.equity;btReplayState.position=null;drawReplay();$("#bt-play").textContent="▶ Play"};
 }
 function drawReplay(){
-  if(!btReplayState)return;
-  const s=btReplayState;
-  const bars=s.data.replay||[];
-  const bar=bars[s.barIndex||0];
-  const t=s.trades[s.index-1],n=s.trades.length;
-  const chart=document.querySelector("#bt-market-chart");
-  if(chart&&bar){
-    const slice=bars.slice(Math.max(0,(s.barIndex||0)-60),(s.barIndex||0)+1);
-    const lo=Math.min(...slice.map(x=>x.low)), hi=Math.max(...slice.map(x=>x.high)), span=hi-lo||1;
-    const w=900,h=300,pad=20,bw=Math.max(3,(w-pad*2)/slice.length-2);
-    chart.innerHTML=slice.map((x,i)=>{const xx=pad+i*(w-pad*2)/slice.length+bw/2;const oy=h-pad-((x.open-lo)/span)*(h-pad*2);const cy=h-pad-((x.close-lo)/span)*(h-pad*2);const hy=h-pad-((x.high-lo)/span)*(h-pad*2);const ly=h-pad-((x.low-lo)/span)*(h-pad*2);return '<line x1="'+xx+'" x2="'+xx+'" y1="'+hy+'" y2="'+ly+'" stroke="currentColor"/><rect x="'+(xx-bw/2)+'" y="'+Math.min(oy,cy)+'" width="'+bw+'" height="'+Math.max(1,Math.abs(cy-oy))+'" fill="'+(x.close>=x.open?'currentColor':'none')+'" stroke="currentColor"/>'}).join("");
-  }
-  $("#bt-replay-progress").textContent=s.index+" / "+n;
-  $("#bt-replay-equity").textContent="$"+s.equity.toLocaleString(undefined,{maximumFractionDigits:2});
-  $("#bt-replay-status").textContent=s.index>=n?"COMPLETE":"REPLAYING";
-  $("#bt-replay-log").innerHTML=s.trades.slice(0,s.index).slice(-8).reverse().map((x,i)=>'<div class="activity-row"><span>#'+(s.index-i)+' '+x.direction+'</span><span>'+x.reason+'</span><strong>'+Number(x.pnl).toFixed(2)+'</strong></div>').join("")||'<div class="empty">Press Play to begin the historical replay.</div>';
-  const vals=[Number(s.data.initial_equity||10000),...s.curve.slice(0,s.index).map(x=>Number(x.equity))];
-  const min=Math.min(...vals),max=Math.max(...vals),range=max-min||1;
-  const pts=vals.map((v,i)=>((i/(vals.length-1||1))*790+5)+","+(170-((v-min)/range)*150)).join(" ");
-  $("#bt-equity-chart").innerHTML='<polyline fill="none" stroke="currentColor" stroke-width="3" points="'+pts+'"/>';
+  const s=btReplayState;if(!s)return;const bars=s.data.replay||[],bar=bars[s.barIndex]||bars[0],n=bars.length;
+  const chart=$("#bt-market-chart");
+  if(bar&&chart){const slice=bars.slice(Math.max(0,s.barIndex-70),s.barIndex+1),lo=Math.min(...slice.map(x=>x.low)),hi=Math.max(...slice.map(x=>x.high)),span=hi-lo||1,w=900,h=320,p=22,step=(w-p*2)/Math.max(slice.length,1),bw=Math.max(3,step*.62);
+    let svg=""; slice.forEach((x,i)=>{const xx=p+i*step+step/2,oy=h-p-(x.open-lo)/span*(h-p*2),cy=h-p-(x.close-lo)/span*(h-p*2),hy=h-p-(x.high-lo)/span*(h-p*2),ly=h-p-(x.low-lo)/span*(h-p*2);svg+='<line x1="'+xx+'" x2="'+xx+'" y1="'+hy+'" y2="'+ly+'" stroke="currentColor" opacity=".7"/><rect x="'+(xx-bw/2)+'" y="'+Math.min(oy,cy)+'" width="'+bw+'" height="'+Math.max(1,Math.abs(cy-oy))+'" fill="'+(x.close>=x.open?"currentColor":"transparent")+'" stroke="currentColor" opacity=".9"/>';if(x.action==="ENTER")svg+='<circle cx="'+xx+'" cy="'+cy+'" r="5" fill="currentColor"/>';if(x.action==="EXIT")svg+='<circle cx="'+xx+'" cy="'+cy+'" r="5" fill="transparent" stroke="currentColor" stroke-width="2"/>';});chart.innerHTML=svg}
+  if(!bar)return;
+  const dd=Number(bar.drawdown_pct||0),eq=Number(bar.equity||s.equity);s.equity=eq;s.peak=Math.max(s.peak,eq);
+  $("#bt-candle-status").textContent="CANDLE "+(s.barIndex+1)+" / "+n;
+  $("#bt-replay-time").textContent=new Date(bar.time).toLocaleString()+" • "+(bar.action||"WAIT")+" • HISTORICAL REPLAY";
+  $("#bt-replay-equity").textContent="$"+eq.toLocaleString(undefined,{maximumFractionDigits:2});
+  $("#bt-replay-pnl").textContent="P&L $"+(eq-Number(s.data.initial_equity||10000)).toFixed(2);
+  $("#bt-replay-dd").textContent=dd.toFixed(2)+"%";
+  $("#bt-replay-action").textContent=(bar.action||"WAIT")+(bar.position_status?" • "+bar.position_status:"");
+  const entered=bar.action==="ENTER"; if(entered&&bar.trade)s.position=bar.trade; if(bar.action==="EXIT")s.position=null;
+  const done=s.barIndex>=n-1;$("#bt-replay-status").textContent=done?"COMPLETE":s.barIndex===0?"READY":"REPLAYING";$("#bt-replay-progress").textContent=(s.barIndex+1)+" / "+n;
+  const seen=(s.data.trade_log||[]).filter(t=>new Date(t.entry_time)<=new Date(bar.time));$("#bt-replay-log").innerHTML=seen.slice(-8).reverse().map((t,i)=>'<div class="activity-row"><span>#'+(seen.length-i)+' '+t.direction+'</span><span>'+t.reason+'</span><strong>'+Number(t.pnl).toFixed(2)+'</strong></div>').join("")||'<div class="empty">Press Play to begin.</div>';
+  const curve=[Number(s.data.initial_equity||10000),...bars.slice(0,s.barIndex+1).map(x=>Number(x.equity||s.data.initial_equity||10000))];const min=Math.min(...curve),max=Math.max(...curve),range=max-min||1;const pts=curve.map((v,i)=>i/(curve.length-1||1)*790+5+","+((170-(v-min)/range*150))).join(" ");$("#bt-equity-chart").innerHTML='<polyline fill="none" stroke="currentColor" stroke-width="3" points="'+pts+'"/>';
 }
-function replayStep(){
-  const s=btReplayState;if(!s)return;
-  const bars=s.data.replay||[];
-  if(s.barIndex>=bars.length-1){drawReplay();return}
-  s.barIndex++;
-  const bar=bars[s.barIndex];
-  if(bar.action==="EXIT"&&bar.trade){s.equity=Number(bar.equity)}
-  if(bar.action==="ENTER"&&s.index<s.trades.length)s.index++;
-  drawReplay();
-}
+function replayStep(){const s=btReplayState;if(!s)return;if(s.barIndex>=s.data.replay.length-1){if(btReplayTimer){clearInterval(btReplayTimer);btReplayTimer=null}drawReplay();return}s.barIndex++;drawReplay()}
 async function runBacktest(){
-  const box=$("#bt-results"); box.textContent="Running historical simulation…";
-  try{
-    const a=$("#bt-asset").value,t=$("#bt-tf").value,d=$("#bt-days").value;
-    const r=await fetch("/api/backtest?instrument="+encodeURIComponent(a)+"&timeframe="+encodeURIComponent(t)+"&days="+d,{cache:"no-store"});
-    const data=await r.json(); if(!r.ok) throw new Error(data.error||"Backtest failed");
-    box.innerHTML='<div class="grid" style="margin:0">'+[
-      ["Final equity","$"+Number(data.final_equity).toLocaleString(undefined,{maximumFractionDigits:2})],
-      ["Return",Number(data.total_return_pct).toFixed(2)+"%"],
-      ["Trades",data.trades_count],
-      ["Win rate",Number(data.win_rate_pct).toFixed(1)+"%"],
-      ["Profit factor",Number(data.profit_factor).toFixed(2)],
-      ["Max drawdown",Number(data.max_drawdown_pct).toFixed(2)+"%"]
-    ].map(x=>'<div class="card stat"><div class="card-title"><h3>'+x[0]+'</h3></div><div class="big">'+x[1]+'</div></div>').join("")+'</div><div class="sub" style="margin-top:14px">Historical simulation only. Results can change with data, costs, slippage and execution assumptions.</div><div class="card" style="margin-top:14px"><div class="card-title"><h3>Trade-by-trade replay</h3><span class="pill">'+data.trades_count+' trades</span></div><div id="bt-trades"></div></div>';
-    const rows=(data.trade_log||[]).map((t,i)=>'<div class="activity-row"><span>#'+(i+1)+' '+t.direction+'</span><span>'+t.reason+'</span><strong>'+Number(t.pnl).toFixed(2)+'</strong></div>').join("");
-    $("#bt-trades").innerHTML=rows||'<div class="empty">No trades in this test window.</div>';
-  }catch(e){box.textContent="Backtest error: "+e.message}
+  const box=$("#bt-results");box.textContent="Running historical simulation…";
+  try{const a=$("#bt-asset").value,t=$("#bt-tf").value,d=$("#bt-days").value,r=await fetch("/api/backtest?instrument="+a+"&timeframe="+t+"&days="+d,{cache:"no-store"}),data=await r.json();if(!r.ok)throw new Error(data.error||"Backtest failed");renderReplay(data)}
+  catch(e){box.textContent="Backtest error: "+e.message}
+}
+async function runLab(){
+  const box=$("#lab-results");box.textContent="Running experiment grid…";
+  try{const p=new URLSearchParams({instrument:$("#lab-asset").value,timeframe:$("#lab-tf").value,days:$("#lab-days").value,risks:$("#lab-risks").value,stops:$("#lab-stops").value,rewards:$("#lab-rewards").value});const r=await fetch("/api/backtest-batch?"+p.toString(),{cache:"no-store"}),d=await r.json();if(!r.ok)throw new Error(d.error||"Batch failed");const rows=(d.results||[]).map((x,i)=>'<tr><td>'+(i+1)+'</td><td>'+x.risk_per_trade_pct+'%</td><td>'+x.atr_stop_multiple+' ATR</td><td>'+x.reward_multiple+'R</td><td>'+x.trades_count+'</td><td>'+Number(x.total_return_pct).toFixed(2)+'%</td><td>'+Number(x.max_drawdown_pct).toFixed(2)+'%</td><td>'+Number(x.win_rate_pct).toFixed(1)+'%</td><td>'+Number(x.profit_factor).toFixed(2)+'</td></tr>').join("");box.innerHTML='<div class="card-title"><h3>Experiment results</h3><span class="pill">'+d.count+' runs</span></div><div style="overflow:auto"><table class="table"><thead><tr><th>#</th><th>Risk</th><th>Stop</th><th>Reward</th><th>Trades</th><th>Return</th><th>DD</th><th>Win rate</th><th>PF</th></tr></thead><tbody>'+rows+'</tbody></table></div><div class="sub" style="margin-top:12px">This is an experiment matrix, not a guarantee of future performance. Use out-of-sample validation before paper trading.</div>'}
+  catch(e){box.textContent="Experiment error: "+e.message}
 }
 function render(){
-  const title=state.view[0].toUpperCase()+state.view.slice(1);
-  $("#page-title").textContent=title;
-  $("#mode-badge").textContent=state.mode.toUpperCase();
-  $(".live-state").innerHTML='<i class="dot '+(apiOnline?"green":"amber")+'"></i> '+(apiOnline?"Paper API online":"Paper API unavailable");
-  $("#view").innerHTML=state.view==="overview"?renderOverview():state.view==="backtests"?renderBacktests():'<div class="card full"><div class="card-title"><h3>'+title+'</h3><span class="pill">CONNECTED</span></div><div class="empty">Dashboard module ready for its ORION data adapter.</div></div>'
+  $("#page-title").textContent=state.view[0].toUpperCase()+state.view.slice(1);$("#mode-badge").textContent="RESEARCH";$(".live-state").innerHTML='<i class="dot '+(apiOnline?"green":"amber")+'"></i> '+(apiOnline?"Paper API online":"Paper API unavailable");
+  $("#view").innerHTML=state.view==="overview"?renderOverview():state.view==="backtests"?renderBacktests():state.view==="research"?renderStrategyLab():'<div class="card full"><div class="card-title"><h3>'+state.view[0].toUpperCase()+state.view.slice(1)+'</h3><span class="pill">CONNECTED</span></div><div class="empty">Dashboard module ready for its ORION data adapter.</div></div>';
+  if(state.view==="backtests")$("#run-backtest").onclick=runBacktest;
+  if(state.view==="research")$("#run-lab").onclick=runLab;
 }
-function customize(){
-  $("#panel-toggles").innerHTML=Object.entries(panelNames).map(([k,v])=>'<div class="toggle-row"><span>'+v+'</span><button class="switch '+(state.panels[k]?"on":"")+'" data-panel="'+k+'"><i></i></button></div>').join("");
-  $$("[data-panel]").forEach(b=>b.onclick=()=>{const k=b.dataset.panel;state.panels[k]=!state.panels[k];b.classList.toggle("on",state.panels[k])});
-  $("#customize-dialog").showModal()
-}
-async function refreshScan(){
-  try{
-    const response=await fetch(state.scanApi,{cache:"no-store",headers:{"Accept":"application/json"}});
-    if(!response.ok)throw new Error("HTTP "+response.status);
-    const data=await response.json();
-    if(data.mode!=="paper"||data.live_trading_enabled!==false)throw new Error("Unsafe scanner response");
-    scanData=data; scanOnline=true;
-  }catch(error){scanOnline=false;console.warn("ORION scanner unavailable:",error)}
-  render();
-}
-async function refreshPaperState(){
-  try{
-    const response=await fetch(state.api,{cache:"no-store",headers:{"Accept":"application/json"}});
-    if(!response.ok)throw new Error("HTTP "+response.status);
-    const data=await response.json();
-    if(data.mode!=="paper"||data.live_trading_enabled!==false)throw new Error("Unsafe paper-state response");
-    Object.assign(paper,data.account||{});
-    apiOnline=true;
-  }catch(error){
-    apiOnline=false;
-    console.warn("ORION paper state unavailable:",error);
-  }
-  render();
-}
-$(".nav-item").forEach(b=>b.onclick=()=>{$(".nav-item").forEach(x=>x.classList.remove("active"));b.classList.add("active");state.view=b.dataset.view;render();if(state.view==="backtests"){$("#run-backtest").onclick=runBacktest}});
-$("#customize").onclick=customize;
-$("#refresh").onclick=async()=>{await refreshPaperState();$("#refresh").textContent="✓";setTimeout(()=>$("#refresh").textContent="↻",700)};
-$("#customize-dialog").addEventListener("close",()=>{save();render()});
-chips();
-render();
-refreshPaperState();
-refreshScan();
-setInterval(refreshPaperState,10000);
-setInterval(refreshScan,60000);
+function customize(){$("#panel-toggles").innerHTML=Object.entries({equity:"Equity & performance",signals:"Active signals",research:"Research status",risk:"Risk controls",markets:"Market watch",activity:"Recent activity"}).map(([k,v])=>'<div class="toggle-row"><span>'+v+'</span><button class="switch '+(state.panels[k]?"on":"")+'" data-panel="'+k+'"><i></i></button></div>').join("");$$("[data-panel]").forEach(b=>b.onclick=()=>{state.panels[b.dataset.panel]=!state.panels[b.dataset.panel];b.classList.toggle("on",state.panels[b.dataset.panel])});$("#customize-dialog").showModal()}
+async function refreshPaperState(){try{const r=await fetch(state.api,{cache:"no-store"}),d=await r.json();if(!r.ok||d.mode!=="paper"||d.live_trading_enabled!==false)throw new Error("unsafe paper response");Object.assign(paper,d.account||{});apiOnline=true}catch(e){apiOnline=false}render()}
+async function refreshScan(){try{const r=await fetch(state.scanApi,{cache:"no-store"}),d=await r.json();if(!r.ok||d.mode!=="paper"||d.live_trading_enabled!==false)throw new Error("unsafe scan response");scanData=d;scanOnline=true}catch(e){scanOnline=false}render()}
+$$(".nav-item").forEach(b=>b.onclick=()=>{$$(".nav-item").forEach(x=>x.classList.remove("active"));b.classList.add("active");state.view=b.dataset.view;render()});
+$("#customize").onclick=customize;$("#refresh").onclick=refreshPaperState;$("#customize-dialog").addEventListener("close",()=>{save();render()});
+chips();render();refreshPaperState();refreshScan();setInterval(refreshPaperState,10000);setInterval(refreshScan,60000);
