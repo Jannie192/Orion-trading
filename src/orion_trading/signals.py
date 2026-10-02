@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
-
 import pandas as pd
-
 from .features import calculate_features, structure_features
 from .models import Direction, Opportunity, Regime, SignalCandidate
 
@@ -29,12 +27,12 @@ def detect(df: pd.DataFrame, regime: Regime, instrument: str = "UNKNOWN") -> lis
     if regime in {Regime.TREND_DOWN, Regime.EXPANSION, Regime.COMPRESSION} and sf.get("breakout_down"):
         evidence = {"close": float(last.close), "rsi14": float(last.rsi14), "range_atr": float(last.range_atr), "breakout_down": True}
         valid = bool(last.rsi14 <= 50 and last.range_atr < 3.0)
-        candidates.append(_candidate(x, Direction.SHORT, (Opportunity.BREAKOUT, Opportunity.MOMENTUM), regime, evidence, valid, None if valid else "BREAKOUT_CONFIRMATION_FAILED"))
+        candidates.append(_candidate(x, instrument, Direction.SHORT, (Opportunity.BREAKOUT, Opportunity.MOMENTUM), regime, evidence, valid, None if valid else "BREAKOUT_CONFIRMATION_FAILED"))
 
     bullish = bool(last.close > last.ema20 > last.ema50 and last.roc10 > 0)
     bearish = bool(last.close < last.ema20 < last.ema50 and last.roc10 < 0)
     if regime == Regime.TREND_UP and bullish:
-        candidates.append(_candidate(x, Direction.LONG, (Opportunity.TREND_CONTINUATION, Opportunity.PULLBACK), regime, {"ema20": float(last.ema20), "ema50": float(last.ema50), "roc10": float(last.roc10)}, True))
+        candidates.append(_candidate(x, instrument, Direction.LONG, (Opportunity.TREND_CONTINUATION, Opportunity.PULLBACK), regime, {"ema20": float(last.ema20), "ema50": float(last.ema50), "roc10": float(last.roc10)}, True))
     if regime == Regime.TREND_DOWN and bearish:
-        candidates.append(_candidate(x, Direction.SHORT, (Opportunity.TREND_CONTINUATION, Opportunity.PULLBACK), regime, {"ema20": float(last.ema20), "ema50": float(last.ema50), "roc10": float(last.roc10)}, True))
+        candidates.append(_candidate(x, instrument, Direction.SHORT, (Opportunity.TREND_CONTINUATION, Opportunity.PULLBACK), regime, {"ema20": float(last.ema20), "ema50": float(last.ema50), "roc10": float(last.roc10)}, True))
     return candidates
