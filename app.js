@@ -30,7 +30,7 @@ let btReplayTimer=null,btReplayState=null;
 function renderReplay(data){
   const box=$("#bt-results");
   const trades=data.trade_log||[], curve=data.equity_curve||[];
-  box.innerHTML='<div class="grid" style="margin:0"><div class="card stat"><div class="card-title"><h3>Replay</h3><span id="bt-replay-status" class="pill">READY</span></div><div class="big" id="bt-replay-equity">
+  box.innerHTML='<div class="card" style="margin-bottom:14px"><div class="card-title"><h3>Market Replay</h3><span id="bt-candle-status" class="pill">CANDLE 0</span></div><svg id="bt-market-chart" viewBox="0 0 900 300" preserveAspectRatio="none" style="width:100%;height:300px"></svg></div><div class="grid" style="margin:0"><div class="card stat"><div class="card-title"><h3>Replay</h3><span id="bt-replay-status" class="pill">READY</span></div><div class="big" id="bt-replay-equity">
   const box=$("#bt-results"); box.textContent="Running historical simulation…";
   try{
     const a=$("#bt-asset").value,t=$("#bt-tf").value,d=$("#bt-days").value;
@@ -45,7 +45,7 @@ function renderReplay(data){
       ["Max drawdown",Number(data.max_drawdown_pct).toFixed(2)+"%"]
     ].map(x=>'<div class="card stat"><div class="card-title"><h3>'+x[0]+'</h3></div><div class="big">'+x[1]+'</div></div>').join("")+'</div><div class="sub" style="margin-top:14px">Historical simulation only. Results can change with data, costs, slippage and execution assumptions.</div><div class="card" style="margin-top:14px"><div class="card-title"><h3>Trade-by-trade replay</h3><span class="pill">'+data.trades_count+' trades</span></div><div id="bt-trades"></div></div>';
     renderReplay(data); const rows=(data.trade_log||[]).map((t,i)=>'<div class="activity-row"><span>#'+(i+1)+' '+t.direction+'</span><span>'+t.reason+'</span><strong>'+Number(t.pnl).toFixed(2)+'</strong></div>').join("");
-    $("#bt-trades").innerHTML=rows||'<div class="empty">No trades in this test window.</div>'; $("#bt-play").onclick=()=>{if(btReplayTimer)return;btReplayTimer=setInterval(()=>{if(!btReplayState||btReplayState.index>=btReplayState.trades.length){clearInterval(btReplayTimer);btReplayTimer=null;return}replayStep()},700)}; $("#bt-step").onclick=replayStep; $("#bt-reset").onclick=()=>{if(btReplayTimer){clearInterval(btReplayTimer);btReplayTimer=null}btReplayState.index=0;btReplayState.equity=Number(data.initial_equity||10000);drawReplay()};
+    $("#bt-trades").innerHTML=rows||'<div class="empty">No trades in this test window.</div>'; $("#bt-play").onclick=()=>{if(btReplayTimer)return;btReplayTimer=setInterval(()=>{if(!btReplayState||btReplayState.index>=btReplayState.trades.length){clearInterval(btReplayTimer);btReplayTimer=null;return}replayStep()},700)}; $("#bt-step").onclick=replayStep; $("#bt-reset").onclick=()=>{if(btReplayTimer){clearInterval(btReplayTimer);btReplayTimer=null}btReplayState.index=0;btReplayState.barIndex=0;btReplayState.equity=Number(data.initial_equity||10000);drawReplay()};
   }catch(e){box.textContent="Backtest error: "+e.message}
 }
 function render(){
@@ -95,12 +95,22 @@ refreshScan();
 setInterval(refreshPaperState,10000);
 setInterval(refreshScan,60000);
 +Number(data.initial_equity||10000).toLocaleString(undefined,{maximumFractionDigits:2})+'</div><div class="sub">Equity</div></div><div class="card stat"><div class="card-title"><h3>Progress</h3></div><div class="big" id="bt-replay-progress">0 / '+trades.length+'</div><div class="sub">Trades replayed</div></div></div><div class="card" style="margin-top:14px"><div class="card-title"><h3>Market replay</h3><div style="display:flex;gap:8px"><button class="primary" id="bt-play">▶ Play</button><button id="bt-step">Step</button><button id="bt-reset">Reset</button></div></div><div id="bt-replay-log" class="activity"></div></div><div class="card" style="margin-top:14px"><div class="card-title"><h3>Equity curve</h3></div><div style="height:180px;overflow:hidden"><svg id="bt-equity-chart" viewBox="0 0 800 180" preserveAspectRatio="none" style="width:100%;height:100%"></svg></div></div>';
-  btReplayState={data,trades,curve,index:0,equity:Number(data.initial_equity||10000)};
+  btReplayState={data,trades,curve,index:0,barIndex:0,equity:Number(data.initial_equity||10000)};
   drawReplay();
 }
 function drawReplay(){
   if(!btReplayState)return;
-  const s=btReplayState,t=s.trades[s.index-1],n=s.trades.length;
+  const s=btReplayState;
+  const bars=s.data.replay||[];
+  const bar=bars[s.barIndex||0];
+  const t=s.trades[s.index-1],n=s.trades.length;
+  const chart=document.querySelector("#bt-market-chart");
+  if(chart&&bar){
+    const slice=bars.slice(Math.max(0,(s.barIndex||0)-60),(s.barIndex||0)+1);
+    const lo=Math.min(...slice.map(x=>x.low)), hi=Math.max(...slice.map(x=>x.high)), span=hi-lo||1;
+    const w=900,h=300,pad=20,bw=Math.max(3,(w-pad*2)/slice.length-2);
+    chart.innerHTML=slice.map((x,i)=>{const xx=pad+i*(w-pad*2)/slice.length+bw/2;const oy=h-pad-((x.open-lo)/span)*(h-pad*2);const cy=h-pad-((x.close-lo)/span)*(h-pad*2);const hy=h-pad-((x.high-lo)/span)*(h-pad*2);const ly=h-pad-((x.low-lo)/span)*(h-pad*2);return '<line x1="'+xx+'" x2="'+xx+'" y1="'+hy+'" y2="'+ly+'" stroke="currentColor"/><rect x="'+(xx-bw/2)+'" y="'+Math.min(oy,cy)+'" width="'+bw+'" height="'+Math.max(1,Math.abs(cy-oy))+'" fill="'+(x.close>=x.open?'currentColor':'none')+'" stroke="currentColor"/>'}).join("");
+  }
   $("#bt-replay-progress").textContent=s.index+" / "+n;
   $("#bt-replay-equity").textContent="$"+s.equity.toLocaleString(undefined,{maximumFractionDigits:2});
   $("#bt-replay-status").textContent=s.index>=n?"COMPLETE":"REPLAYING";
@@ -111,8 +121,14 @@ function drawReplay(){
   $("#bt-equity-chart").innerHTML='<polyline fill="none" stroke="currentColor" stroke-width="3" points="'+pts+'"/>';
 }
 function replayStep(){
-  const s=btReplayState;if(!s||s.index>=s.trades.length)return;
-  s.equity+=Number(s.trades[s.index].pnl||0);s.index++;drawReplay();
+  const s=btReplayState;if(!s)return;
+  const bars=s.data.replay||[];
+  if(s.barIndex>=bars.length-1){drawReplay();return}
+  s.barIndex++;
+  const bar=bars[s.barIndex];
+  if(bar.action==="EXIT"&&bar.trade){s.equity=Number(bar.equity)}
+  if(bar.action==="ENTER"&&s.index<s.trades.length)s.index++;
+  drawReplay();
 }
 async function runBacktest(){
   const box=$("#bt-results"); box.textContent="Running historical simulation…";
