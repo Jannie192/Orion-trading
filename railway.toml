@@ -1,0 +1,8 @@
+[build]
+
+[deploy]
+startCommand = "python research_worker.py"
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
