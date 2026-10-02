@@ -96,15 +96,49 @@ async function runResearchEngine(){
   }catch(e){if(box)box.textContent="Research Engine error: "+e.message}
   finally{if(button)button.disabled=false}
 }
+async function pollResearchJob(jobId){
+  const box=$("#research-engine-status");
+  let attempts=0;
+  while(attempts<180){
+    attempts++;
+    const r=await fetch("/api/research-jobs?job_id="+encodeURIComponent(jobId),{cache:"no-store"});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||"Research job lookup failed");
+    const job=d.job||{};
+    if(box)box.innerHTML='<strong>Walk-Forward Job</strong><div class="sub" style="margin-top:6px">'+(job.stage||job.status||"QUEUED")+' • '+Number(job.progress||0)+'%</div>';
+    if(job.status==="COMPLETED")return job.result;
+    if(job.status==="FAILED")throw new Error(job.error||"Walk-forward job failed");
+    await new Promise(resolve=>setTimeout(resolve,3000));
+  }
+  throw new Error("RESEARCH_JOB_TIMEOUT");
+}
+async function renderWalkForwardResult(d){
+  const box=$("#research-engine-status");
+  const rows=(d.results||[]).slice(0,30).map(x=>'<tr><td>'+x.risk_per_trade_pct+'%</td><td>'+x.atr_stop_multiple+' ATR</td><td>'+x.reward_multiple+'R</td><td>'+x.folds_positive+'/'+x.fold_count+' ('+Number(x.positive_fold_pct).toFixed(0)+'%)</td><td>'+Number(x.average_test_return_pct).toFixed(2)+'%</td><td>'+Number(x.average_test_drawdown_pct).toFixed(2)+'%</td><td>'+Number(x.test_return_spread_pct).toFixed(2)+'%</td></tr>').join("");
+  if(box)box.innerHTML='<strong>Walk-Forward Matrix</strong><div class="sub" style="margin-top:6px">'+d.validation.folds+' sequential folds • '+d.validation.train_bars+' train / '+d.validation.test_bars+' test bars per fold • step '+d.validation.step_bars+' bars • no random shuffle</div><div style="overflow:auto;margin-top:10px"><table class="table"><thead><tr><th>Risk</th><th>Stop</th><th>Reward</th><th>Positive folds</th><th>Avg test return</th><th>Avg test DD</th><th>Return spread</th></tr></thead><tbody>'+rows+'</tbody></table></div><div class="sub" style="margin-top:10px">Research completed asynchronously on the Railway worker. Consistency across historical windows is descriptive research evidence; no configuration is automatically selected or promoted.</div>';
+}
 async function runWalkForward(){
   const box=$("#research-engine-status"),b=$("#walk-forward-research");if(b)b.disabled=true;
-  if(box)box.textContent="ORION is running sequential rolling historical windows…";
+  if(box)box.textContent="Queueing ORION walk-forward research job…";
   try{
-    const p=new URLSearchParams({instrument:$("#lab-asset").value,timeframe:$("#lab-tf").value,days:$("#lab-days").value,risks:$("#lab-risks").value,stops:$("#lab-stops").value,rewards:$("#lab-rewards").value});
-    const r=await fetch("/api/walk-forward?"+p.toString(),{cache:"no-store"}),d=await r.json();if(!r.ok)throw new Error(d.error||"Walk-forward failed");
-    const rows=(d.results||[]).slice(0,30).map(x=>'<tr><td>'+x.risk_per_trade_pct+'%</td><td>'+x.atr_stop_multiple+' ATR</td><td>'+x.reward_multiple+'R</td><td>'+x.folds_positive+'/'+x.fold_count+' ('+Number(x.positive_fold_pct).toFixed(0)+'%)</td><td>'+Number(x.average_test_return_pct).toFixed(2)+'%</td><td>'+Number(x.average_test_drawdown_pct).toFixed(2)+'%</td><td>'+Number(x.test_return_spread_pct).toFixed(2)+'%</td></tr>').join("");
-    if(box)box.innerHTML='<strong>Walk-Forward Matrix</strong><div class="sub" style="margin-top:6px">'+d.validation.folds+' sequential folds • '+d.validation.train_bars+' train / '+d.validation.test_bars+' test bars per fold • step '+d.validation.step_bars+' bars • no random shuffle</div><div style="overflow:auto;margin-top:10px"><table class="table"><thead><tr><th>Risk</th><th>Stop</th><th>Reward</th><th>Positive folds</th><th>Avg test return</th><th>Avg test DD</th><th>Return spread</th></tr></thead><tbody>'+rows+'</tbody></table></div><div class="sub" style="margin-top:10px">Consistency across historical windows is descriptive research evidence; no configuration is automatically selected or promoted.</div>';
-  }catch(e){if(box)box.textContent="Walk-forward error: "+e.message}finally{if(b)b.disabled=false}
+    const request={
+      instrument:$("#lab-asset").value,
+      timeframe:$("#lab-tf").value,
+      days:Number($("#lab-days").value),
+      risks:$("#lab-risks").value,
+      stops:$("#lab-stops").value,
+      rewards:$("#lab-rewards").value,
+      max_folds:8
+    };
+    const r=await fetch("/api/research-jobs",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(request),cache:"no-store"});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||"Unable to queue walk-forward job");
+    const job=d.job;
+    if(box)box.innerHTML='<strong>Walk-Forward Job Queued</strong><div class="sub" style="margin-top:6px">Job '+job.job_id+' • worker: Railway • status: '+job.status+'</div>';
+    const result=await pollResearchJob(job.job_id);
+    await renderWalkForwardResult(result);
+  }catch(e){if(box)box.textContent="Walk-forward error: "+e.message}
+  finally{if(b)b.disabled=false}
 }
 async function refreshCrossResearch(){
   const el=$("#cross-research-intelligence"); if(!el)return;
