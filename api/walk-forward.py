@@ -73,3 +73,30 @@ def run(instrument,timeframe,days,risks,stops,rewards,train_bars=None,test_bars=
     return {"mode":"research","live_trading_enabled":False,"instrument":instrument,"timeframe":timeframe,"days":days,
       "validation":{"method":"rolling walk-forward","folds":len(folds),"train_bars":train_n,"test_bars":test_n,"step_bars":step,
         "chronological":True,"no_random_shuffle":True},"count":len(aggregate),"folds":folds,"results":aggregate}
+
+
+import json
+from http.server import BaseHTTPRequestHandler
+from urllib.parse import parse_qs, urlparse
+
+class handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        try:
+            q=parse_qs(urlparse(self.path).query)
+            instrument=q.get("instrument",["BTCUSDT"])[0].upper()
+            timeframe=q.get("timeframe",["H1"])[0].upper()
+            days=int(q.get("days",["90"])[0])
+            risks=q.get("risks",["0.25,0.5,0.75"])[0]
+            stops=q.get("stops",["1,1.5,2"])[0]
+            rewards=q.get("rewards",["1.5,2,3"])[0]
+            payload=json.dumps(run(instrument,timeframe,days,risks,stops,rewards),default=str,separators=(",",":")).encode()
+            status=200
+        except Exception as exc:
+            payload=json.dumps({"mode":"research","live_trading_enabled":False,"error":str(exc)},separators=(",",":")).encode()
+            status=400
+        self.send_response(status)
+        self.send_header("Content-Type","application/json; charset=utf-8")
+        self.send_header("Cache-Control","no-store, max-age=0")
+        self.send_header("Content-Length",str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
