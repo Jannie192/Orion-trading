@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ORION — Trading Command Center</title>
+  <meta name="description" content="ORION trading research and execution command center">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand"><div class="brand-mark">O</div><div><strong>ORION</strong><span>TRADING INTELLIGENCE</span></div></div>
+      <nav id="nav">
+        <button class="nav-item active" data-view="overview">◈ <span>Overview</span></button>
+        <button class="nav-item" data-view="markets">◫ <span>Markets</span></button>
+        <button class="nav-item" data-view="signals">⌁ <span>Signals</span></button>
+        <button class="nav-item" data-view="research">◎ <span>Research</span></button>
+        <button class="nav-item" data-view="backtests">◌ <span>Backtests</span></button>
+        <button class="nav-item" data-view="risk">△ <span>Risk</span></button>
+        <button class="nav-item" data-view="settings">⚙ <span>Settings</span></button>
+      </nav>
+      <div class="system-card">
+        <div class="eyebrow">SYSTEM</div>
+        <div class="status-line"><i class="dot amber"></i><span>Research active</span></div>
+        <small>Execution disabled</small>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <div class="eyebrow">COMMAND CENTER</div>
+          <h1 id="page-title">Overview</h1>
+        </div>
+        <div class="top-actions">
+          <span class="mode-badge" id="mode-badge">RESEARCH</span>
+          <button class="icon-btn" id="refresh">↻</button>
+          <button class="primary-btn" id="customize">Customize</button>
+        </div>
+      </header>
+
+      <section class="toolbar">
+        <div class="filter-group"><span>Assets</span><div id="asset-filters"></div></div>
+        <div class="filter-group"><span>Timeframe</span><div id="tf-filters"></div></div>
+        <div class="toolbar-spacer"></div>
+        <div class="live-state"><i class="dot green"></i> Engine online</div>
+      </section>
+
+      <div id="view" class="view"></div>
+    </main>
+  </div>
+
+  <dialog id="customize-dialog">
+    <form method="dialog" class="dialog-card">
+      <div class="dialog-head"><div><div class="eyebrow">DISPLAY</div><h2>Customize dashboard</h2></div><button class="icon-btn">×</button></div>
+      <p class="muted">Choose which panels appear on your command center. Preferences are saved locally.</p>
+      <div id="panel-toggles" class="toggle-grid"></div>
+      <div class="dialog-actions"><button class="secondary-btn">Close</button><button class="primary-btn" value="save">Save layout</button></div>
+    </form>
+  </dialog>
+  <script src="./app.js"></script>
+</body>
+</html>
