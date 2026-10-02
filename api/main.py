@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 API_DIR = Path(__file__).resolve().parent
 
@@ -25,8 +26,10 @@ def _load_handler(filename: str):
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        route = self.path.split("?", 1)[0]
-        filename = _ROUTES.get(route)
+        parsed = urlparse(self.path)
+        route = parsed.path
+        query_route = parse_qs(parsed.query).get("route", [None])[0]
+        filename = _ROUTES.get(route) or _ROUTES.get(f"/api/{query_route}")
         if filename is None:
             self.send_response(404)
             self.send_header("Content-Type", "application/json; charset=utf-8")
