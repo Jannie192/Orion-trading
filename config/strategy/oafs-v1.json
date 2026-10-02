@@ -1,0 +1,41 @@
+{
+  "strategy": "OAFS",
+  "version": "1.0.0",
+  "status": "research",
+  "live_trading_enabled": false,
+  "instruments": [
+    "EUR_USD",
+    "GBP_USD",
+    "USD_JPY",
+    "USD_CHF",
+    "AUD_USD",
+    "USD_CAD",
+    "NZD_USD"
+  ],
+  "timeframes": {
+    "regime": "D1",
+    "structure": "H4",
+    "setup": "H1",
+    "entry": "M15"
+  },
+  "risk_defaults": {
+    "max_risk_per_trade_pct": 0.5,
+    "max_daily_loss_pct": 1.5,
+    "max_consecutive_losses": 3,
+    "news_filter_enabled": true,
+    "spread_filter_enabled": true,
+    "slippage_filter_enabled": true,
+    "emergency_shutdown_enabled": true
+  },
+  "news_defaults": {
+    "pre_event_restriction_minutes": 15,
+    "post_event_shock_restriction_minutes": 15
+  },
+  "opportunity_modules": [
+    "breakout",
+    "pullback",
+    "momentum",
+    "trend_continuation",
+    "reversal"
+  ]
+}
