@@ -3,10 +3,15 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
+SRC_PATH = os.path.join(ROOT, "src")
+if SRC_PATH not in sys.path:
+    sys.path.insert(0, SRC_PATH)
+
 API_PATH = os.path.join(ROOT, "api", "walk-forward.py")
 SPEC = importlib.util.spec_from_file_location("orion_walk_forward_api", API_PATH)
 MODULE = importlib.util.module_from_spec(SPEC)
@@ -62,11 +67,11 @@ class Handler(BaseHTTPRequestHandler):
         if path != "/walk-forward":
             return _json_response(self, 404, {"error": "NOT_FOUND"})
 
-        length = int(self.headers.get("Content-Length", "0"))
-        if length > MAX_BODY:
-            return _json_response(self, 413, {"error": "REQUEST_TOO_LARGE"})
-
         try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if length > MAX_BODY:
+                return _json_response(self, 413, {"error": "REQUEST_TOO_LARGE"})
+
             raw = self.rfile.read(length) if length else b"{}"
             payload = json.loads(raw.decode("utf-8"))
             result = MODULE.run(
