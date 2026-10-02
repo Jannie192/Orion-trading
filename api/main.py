@@ -18,6 +18,7 @@ _ROUTES = {
     "/api/strategy-history": "strategy-history.py",
     "/api/experiment-replay": "experiment-replay.py",
     "/api/research-engine": "research-engine.py",
+    "/api/research-insights": "research-insights.py",
 }
 
 _STATIC = {
