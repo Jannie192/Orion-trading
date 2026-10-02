@@ -68,6 +68,7 @@ class handler(BaseHTTPRequestHandler):
             if not job_id:
                 raise ValueError("JOB_ID_REQUIRED")
             job = SupabaseStrategyStore().research_job(job_id)
+            job["progress"] = float(job.get("progress_pct", 0))
             _json(self, {"mode": "research", "live_trading_enabled": False, "job": job})
         except Exception as exc:
             _json(self, {"error": str(exc), "mode": "research", "live_trading_enabled": False}, 404)
@@ -108,12 +109,17 @@ class handler(BaseHTTPRequestHandler):
             job = store.create_research_job({
                 "job_type": "WALK_FORWARD",
                 "status": "QUEUED",
-                "request": request_payload,
-                "progress": 0,
-                "stage": "QUEUED",
+                "strategy_name": "ORION Walk-Forward",
+                "strategy_version": "ASYNC",
+                "instrument": instrument,
+                "timeframe": timeframe,
+                "days": days,
+                "grid": request_payload,
+                "progress_pct": 0,
             })
 
             threading.Thread(target=_trigger_worker, args=(job["job_id"], request_payload), daemon=True).start()
+            job["progress"] = float(job.get("progress_pct", 0))
             _json(self, {"mode": "research", "live_trading_enabled": False, "job": job}, 202)
         except Exception as exc:
             _json(self, {"error": str(exc), "mode": "research", "live_trading_enabled": False}, 400)
