@@ -28,7 +28,7 @@ def candles_frame(payload: dict[str, Any]) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     for candle in payload.get("candles", []):
         row: dict[str, Any] = {
-            "time": pd.Timestamp(candle["time"], tz="UTC"),
+            "time": pd.Timestamp(candle["time"]).tz_convert("UTC") if pd.Timestamp(candle["time"]).tzinfo is not None else pd.Timestamp(candle["time"]).tz_localize("UTC"),
             "volume": candle.get("volume"),
             "complete": candle.get("complete", True),
         }
