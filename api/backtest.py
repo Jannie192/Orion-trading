@@ -46,6 +46,11 @@ def run(instrument: str, timeframe: str, days: int):
     payload["trades_count"] = len(result.trades)
     payload.pop("trades", None)
     payload["trade_log"] = [t.__dict__ | {"direction": t.direction.value, "entry_time": t.entry_time.isoformat(), "exit_time": t.exit_time.isoformat()} for t in result.trades]
+    payload["equity_curve"] = []
+    equity = float(result.initial_equity)
+    for trade in result.trades:
+        equity += float(trade.pnl)
+        payload["equity_curve"].append({"time": trade.exit_time.isoformat(), "equity": equity})
     return payload
 
 class handler(BaseHTTPRequestHandler):
