@@ -23,12 +23,31 @@ if(state.panels.risk)c+='<section class="card side"><div class="card-title"><h3>
 if(state.panels.markets)c+='<section class="card full"><div class="card-title"><h3>Market watch</h3><span class="muted">'+state.timeframe+" • "+state.assets.length+' selected</span></div><table class="table"><thead><tr><th>Instrument</th><th>Regime</th><th>Signal</th><th>State</th></tr></thead><tbody>'+state.assets.map(x=>'<tr><td><strong>'+x+"</strong></td><td class="muted">Awaiting scan</td><td>—</td><td><span class="pill">PAPER</span></td></tr>").join("")+"</tbody></table></section>";
 if(state.panels.activity)c+='<section class="card full"><div class="card-title"><h3>Scanner activity</h3><span class="muted">'+(scanData.scanned_at?new Date(scanData.scanned_at).toLocaleString():"Not scanned")+'</span></div><div class="empty">'+(scanOnline?"Market scan completed. Valid candidates are persisted as paper orders only.":"Scanner unavailable; retrying automatically.")+'</div></section>';
 return c+"</div>"}
+function renderBacktests(){
+  return '<div class="grid"><section class="card full"><div class="card-title"><h3>Backtest engine</h3><span class="pill">RESEARCH ONLY</span></div><div class="sub">Walk-forward simulation using ORION signals, ATR stops, 2R targets and 0.50% risk per trade. No live orders.</div><div style="display:flex;gap:10px;margin-top:18px;flex-wrap:wrap"><select id="bt-asset"><option>BTCUSDT</option><option>ETHUSDT</option><option>EURUSD</option><option>GBPUSD</option><option>NAS100</option><option>US30</option></select><select id="bt-tf"><option>H1</option><option>H4</option><option>M15</option><option>D1</option></select><select id="bt-days"><option value="30">30 days</option><option value="90" selected>90 days</option><option value="180">180 days</option><option value="365">365 days</option></select><button class="primary" id="run-backtest">Run backtest</button></div><div id="bt-results" class="empty" style="margin-top:18px">Choose a market and run a historical simulation.</div></section></div>'
+}
+async function runBacktest(){
+  const box=$("#bt-results"); box.textContent="Running historical simulation…";
+  try{
+    const a=$("#bt-asset").value,t=$("#bt-tf").value,d=$("#bt-days").value;
+    const r=await fetch("/api/backtest?instrument="+encodeURIComponent(a)+"&timeframe="+encodeURIComponent(t)+"&days="+d,{cache:"no-store"});
+    const data=await r.json(); if(!r.ok) throw new Error(data.error||"Backtest failed");
+    box.innerHTML='<div class="grid" style="margin:0">'+[
+      ["Final equity","$"+Number(data.final_equity).toLocaleString(undefined,{maximumFractionDigits:2})],
+      ["Return",Number(data.total_return_pct).toFixed(2)+"%"],
+      ["Trades",data.trades_count],
+      ["Win rate",Number(data.win_rate_pct).toFixed(1)+"%"],
+      ["Profit factor",Number(data.profit_factor).toFixed(2)],
+      ["Max drawdown",Number(data.max_drawdown_pct).toFixed(2)+"%"]
+    ].map(x=>'<div class="card stat"><div class="card-title"><h3>'+x[0]+'</h3></div><div class="big">'+x[1]+'</div></div>').join("")+'</div><div class="sub" style="margin-top:14px">This is historical simulation, not a forecast. Results can change with data, costs, slippage and execution assumptions.</div>';
+  }catch(e){box.textContent="Backtest error: "+e.message}
+}
 function render(){
   const title=state.view[0].toUpperCase()+state.view.slice(1);
   $("#page-title").textContent=title;
   $("#mode-badge").textContent=state.mode.toUpperCase();
   $(".live-state").innerHTML='<i class="dot '+(apiOnline?"green":"amber")+'"></i> '+(apiOnline?"Paper API online":"Paper API unavailable");
-  $("#view").innerHTML=state.view==="overview"?renderOverview():'<div class="card full"><div class="card-title"><h3>'+title+'</h3><span class="pill">CONNECTED</span></div><div class="empty">Dashboard module ready for its ORION data adapter.</div></div>'
+  $("#view").innerHTML=state.view==="overview"?renderOverview():state.view==="backtests"?renderBacktests():'<div class="card full"><div class="card-title"><h3>'+title+'</h3><span class="pill">CONNECTED</span></div><div class="empty">Dashboard module ready for its ORION data adapter.</div></div>'
 }
 function customize(){
   $("#panel-toggles").innerHTML=Object.entries(panelNames).map(([k,v])=>'<div class="toggle-row"><span>'+v+'</span><button class="switch '+(state.panels[k]?"on":"")+'" data-panel="'+k+'"><i></i></button></div>').join("");
@@ -59,7 +78,7 @@ async function refreshPaperState(){
   }
   render();
 }
-$$(".nav-item").forEach(b=>b.onclick=()=>{$$(".nav-item").forEach(x=>x.classList.remove("active"));b.classList.add("active");state.view=b.dataset.view;render()});
+$(".nav-item").forEach(b=>b.onclick=()=>{$(".nav-item").forEach(x=>x.classList.remove("active"));b.classList.add("active");state.view=b.dataset.view;render();if(state.view==="backtests"){$("#run-backtest").onclick=runBacktest}});
 $("#customize").onclick=customize;
 $("#refresh").onclick=async()=>{await refreshPaperState();$("#refresh").textContent="✓";setTimeout(()=>$("#refresh").textContent="↻",700)};
 $("#customize-dialog").addEventListener("close",()=>{save();render()});
