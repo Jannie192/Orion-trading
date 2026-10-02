@@ -23,12 +23,35 @@ class OandaClient:
     def __init__(self, config: OandaConfig):
         self.config = config
         self.session = requests.Session()
-        self.session.headers.update({"Authorization": f"Bearer {config.token}", "Content-Type": "application/json"})
+        self.session.headers.update(
+            {"Authorization": f"Bearer {config.token}", "Content-Type": "application/json"}
+        )
 
-    def candles(self, instrument: str, granularity: str = "M15", count: int = 500) -> dict[str, Any]:
+    def candles(
+        self,
+        instrument: str,
+        granularity: str = "M15",
+        count: int = 500,
+        price: str = "MBA",
+        from_time: str | None = None,
+        to_time: str | None = None,
+        include_first: bool = True,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {
+            "granularity": granularity,
+            "price": price,
+            "includeFirst": str(include_first).lower(),
+        }
+        if from_time is not None or to_time is not None:
+            if from_time is not None:
+                params["from"] = from_time
+            if to_time is not None:
+                params["to"] = to_time
+        else:
+            params["count"] = count
         response = self.session.get(
             f"{self.config.base_url}/v3/instruments/{instrument}/candles",
-            params={"granularity": granularity, "count": count, "price": "MBA"},
+            params=params,
             timeout=20,
         )
         response.raise_for_status()
