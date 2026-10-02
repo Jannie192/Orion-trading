@@ -15,6 +15,9 @@ def provider_from_env() -> MarketDataAdapter:
     if provider == "dukascopy":
         from .dukascopy_client import DukascopyClient
         return DukascopyClient()
+    if provider == "binance":
+        from .binance_client import BinanceClient
+        return BinanceClient()
     if provider == "oanda":
         from .oanda_client import OandaClient
         return OandaClient.from_env()
