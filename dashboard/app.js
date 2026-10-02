@@ -1,7 +1,9 @@
-const state={view:"overview",assets:["BTCUSDT","ETHUSDT"],timeframe:"1H",mode:"paper",autoExecution:false,panels:JSON.parse(localStorage.getItem("orion-panels")||'{"equity":true,"signals":true,"research":true,"risk":true,"markets":true,"activity":true}')};
+const state={view:"overview",assets:["BTCUSDT","ETHUSDT"],timeframe:"1H",mode:"paper",autoExecution:false,api:"/api/paper-state",panels:JSON.parse(localStorage.getItem("orion-panels")||'{"equity":true,"signals":true,"research":true,"risk":true,"markets":true,"activity":true}')};
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const panelNames={equity:"Equity & performance",signals:"Active signals",research:"Research status",risk:"Risk controls",markets:"Market watch",activity:"Recent activity"};
 const paper={initial_equity:10000,equity:10000,open_orders:0,closed_trades:0,realized_pnl:0};
+let apiOnline=false;
+
 function save(){localStorage.setItem("orion-panels",JSON.stringify(state.panels))}
 function chips(){
   $("#asset-filters").innerHTML=["BTCUSDT","ETHUSDT","EURUSD","GBPUSD","NAS100","US30"].map(x=>'<button class="chip '+(state.assets.includes(x)?"active":"")+'" data-asset="'+x+'">'+x+"</button>").join("");
@@ -9,7 +11,7 @@ function chips(){
   $$("[data-asset]").forEach(b=>b.onclick=()=>{const x=b.dataset.asset;state.assets=state.assets.includes(x)?state.assets.filter(a=>a!==x):[...state.assets,x];chips();render()});
   $$("[data-tf]").forEach(b=>b.onclick=()=>{state.timeframe=b.dataset.tf;chips();render()});
 }
-function stat(title,value,sub,cls=""){return '<div class="card stat"><div class="card-title"><h3>'+title+"</h3></div><div class="big "+cls+">"+value+'</div><div class="sub">'+sub+"</div></div>"}
+function stat(title,value,sub,cls=""){return '<div class="card stat"><div class="card-title"><h3>'+title+"</h3></div><div class="big "+cls+'">'+value+'</div><div class="sub">'+sub+"</div></div>"}
 function renderOverview(){let c='<div class="grid">';
 if(state.panels.equity)c+=stat("Paper equity","$"+paper.equity.toLocaleString(),"Initial: $"+paper.initial_equity.toLocaleString());
 if(state.panels.signals)c+=stat("Signals","—","Awaiting validated market scan","neutral");
@@ -20,6 +22,37 @@ if(state.panels.risk)c+='<section class="card side"><div class="card-title"><h3>
 if(state.panels.markets)c+='<section class="card full"><div class="card-title"><h3>Market watch</h3><span class="muted">'+state.timeframe+" • "+state.assets.length+' selected</span></div><table class="table"><thead><tr><th>Instrument</th><th>Regime</th><th>Signal</th><th>State</th></tr></thead><tbody>'+state.assets.map(x=>'<tr><td><strong>'+x+"</strong></td><td class="muted">Awaiting scan</td><td>—</td><td><span class="pill">PAPER</span></td></tr>").join("")+"</tbody></table></section>";
 if(state.panels.activity)c+='<section class="card full"><div class="card-title"><h3>Activity</h3><span class="muted">'+paper.closed_trades+' closed trades</span></div><div class="empty">Paper fills, risk decisions, journal events and system errors will appear here.</div></section>';
 return c+"</div>"}
-function render(){const title=state.view[0].toUpperCase()+state.view.slice(1);$("#page-title").textContent=title;$("#mode-badge").textContent=state.mode.toUpperCase();$("#view").innerHTML=state.view==="overview"?renderOverview():'<div class="card full"><div class="card-title"><h3>'+title+'</h3><span class="pill">CONNECTED</span></div><div class="empty">Dashboard module ready for its ORION data adapter.</div></div>'}
-function customize(){$("#panel-toggles").innerHTML=Object.entries(panelNames).map(([k,v])=>'<div class="toggle-row"><span>'+v+'</span><button class="switch '+(state.panels[k]?"on":"")+'" data-panel="'+k+'"><i></i></button></div>').join("");$$("[data-panel]").forEach(b=>b.onclick=()=>{const k=b.dataset.panel;state.panels[k]=!state.panels[k];b.classList.toggle("on",state.panels[k])});$("#customize-dialog").showModal()}
-$$(".nav-item").forEach(b=>b.onclick=()=>{$$(".nav-item").forEach(x=>x.classList.remove("active"));b.classList.add("active");state.view=b.dataset.view;render()});$("#customize").onclick=customize;$("#refresh").onclick=()=>{render();$("#refresh").textContent="✓";setTimeout(()=>$("#refresh").textContent="↻",700)};$("#customize-dialog").addEventListener("close",()=>{save();render()});chips();render();
+function render(){
+  const title=state.view[0].toUpperCase()+state.view.slice(1);
+  $("#page-title").textContent=title;
+  $("#mode-badge").textContent=state.mode.toUpperCase();
+  $(".live-state").innerHTML='<i class="dot '+(apiOnline?"green":"amber")+'"></i> '+(apiOnline?"Paper API online":"Paper API unavailable");
+  $("#view").innerHTML=state.view==="overview"?renderOverview():'<div class="card full"><div class="card-title"><h3>'+title+'</h3><span class="pill">CONNECTED</span></div><div class="empty">Dashboard module ready for its ORION data adapter.</div></div>'
+}
+function customize(){
+  $("#panel-toggles").innerHTML=Object.entries(panelNames).map(([k,v])=>'<div class="toggle-row"><span>'+v+'</span><button class="switch '+(state.panels[k]?"on":"")+'" data-panel="'+k+'"><i></i></button></div>').join("");
+  $$("[data-panel]").forEach(b=>b.onclick=()=>{const k=b.dataset.panel;state.panels[k]=!state.panels[k];b.classList.toggle("on",state.panels[k])});
+  $("#customize-dialog").showModal()
+}
+async function refreshPaperState(){
+  try{
+    const response=await fetch(state.api,{cache:"no-store",headers:{"Accept":"application/json"}});
+    if(!response.ok)throw new Error("HTTP "+response.status);
+    const data=await response.json();
+    if(data.mode!=="paper"||data.live_trading_enabled!==false)throw new Error("Unsafe paper-state response");
+    Object.assign(paper,data.account||{});
+    apiOnline=true;
+  }catch(error){
+    apiOnline=false;
+    console.warn("ORION paper state unavailable:",error);
+  }
+  render();
+}
+$$(".nav-item").forEach(b=>b.onclick=()=>{$$(".nav-item").forEach(x=>x.classList.remove("active"));b.classList.add("active");state.view=b.dataset.view;render()});
+$("#customize").onclick=customize;
+$("#refresh").onclick=async()=>{await refreshPaperState();$("#refresh").textContent="✓";setTimeout(()=>$("#refresh").textContent="↻",700)};
+$("#customize-dialog").addEventListener("close",()=>{save();render()});
+chips();
+render();
+refreshPaperState();
+setInterval(refreshPaperState,10000);
