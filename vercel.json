@@ -1,0 +1,7 @@
+{
+  "rewrites": [
+    { "source": "/api/paper-scan", "destination": "/api/main" },
+    { "source": "/api/paper-state", "destination": "/api/main" },
+    { "source": "/api/scan", "destination": "/api/main" }
+  ]
+}
