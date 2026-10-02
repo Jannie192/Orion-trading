@@ -23,6 +23,26 @@ def _floats(value: str, *, minimum: float, maximum: float) -> list[float]:
         raise ValueError("EMPTY_PARAMETER_GRID")
     return list(dict.fromkeys(out))
 
+def _metrics(candles, instrument, risk, stop, reward):
+    engine = TradingEngine(config=TradingEngineConfig(
+        risk_per_trade_pct=risk, atr_stop_multiple=stop, reward_multiple=reward
+    ))
+    result = Backtester(
+        engine=engine,
+        config=BacktestConfig(initial_equity=10000.0, risk_per_trade_pct=risk),
+    ).run(candles, instrument=instrument)
+    pf = result.profit_factor
+    return {
+        "final_equity": result.final_equity,
+        "total_return_pct": result.total_return_pct,
+        "max_drawdown_pct": result.max_drawdown_pct,
+        "trades_count": len(result.trades),
+        "wins": result.wins,
+        "losses": result.losses,
+        "win_rate_pct": result.win_rate_pct,
+        "profit_factor": None if pf == float("inf") else pf,
+    }
+
 def run(instrument: str, timeframe: str, days: int, risks: str, stops: str, rewards: str):
     if instrument not in _ALLOWED or timeframe not in _TFS:
         raise ValueError("BATCH_PROVIDER_CURRENTLY_SUPPORTS_CRYPTO_ONLY")
@@ -45,33 +65,24 @@ def run(instrument: str, timeframe: str, days: int, risks: str, stops: str, rewa
         if close:
             close()
 
+    if len(candles) < 120:
+        raise ValueError("NOT_ENOUGH_CANDLES_FOR_WALK_FORWARD_VALIDATION")
+    split = max(60, int(len(candles) * 0.70))
+    train = candles.iloc[:split]
+    test = candles.iloc[split:]
     results = []
     for risk in risk_values:
         for stop in stop_values:
             for reward in reward_values:
-                engine = TradingEngine(config=TradingEngineConfig(
-                    risk_per_trade_pct=risk,
-                    atr_stop_multiple=stop,
-                    reward_multiple=reward,
-                ))
-                result = Backtester(
-                    engine=engine,
-                    config=BacktestConfig(initial_equity=10000.0, risk_per_trade_pct=risk),
-                ).run(candles, instrument=instrument)
-                pf = result.profit_factor
+                train_metrics = _metrics(train, instrument, risk, stop, reward)
+                test_metrics = _metrics(test, instrument, risk, stop, reward)
                 results.append({
                     "risk_per_trade_pct": risk,
                     "atr_stop_multiple": stop,
                     "reward_multiple": reward,
-                    "initial_equity": result.initial_equity,
-                    "final_equity": result.final_equity,
-                    "total_return_pct": result.total_return_pct,
-                    "max_drawdown_pct": result.max_drawdown_pct,
-                    "trades_count": len(result.trades),
-                    "wins": result.wins,
-                    "losses": result.losses,
-                    "win_rate_pct": result.win_rate_pct,
-                    "profit_factor": None if pf == float("inf") else pf,
+                    "train": train_metrics,
+                    "test": test_metrics,
+                    "return_delta_pct": test_metrics["total_return_pct"] - train_metrics["total_return_pct"],
                 })
     return {
         "mode": "research",
@@ -79,6 +90,7 @@ def run(instrument: str, timeframe: str, days: int, risks: str, stops: str, rewa
         "instrument": instrument,
         "timeframe": timeframe,
         "days": days,
+        "validation": {"method": "70/30 chronological walk-forward", "train_bars": len(train), "test_bars": len(test)},
         "count": len(results),
         "results": results,
     }
