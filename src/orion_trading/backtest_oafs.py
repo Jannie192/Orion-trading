@@ -46,12 +46,16 @@ def _simulate(plan, future, conservative):
     return future.index[-1], float(future.close.iloc[-1]), 'END_OF_DATA'
 
 
-def run_oafs_backtest(frames, instrument, config=None):
+def run_oafs_backtest(frames, instrument, config=None, start=None, end=None):
     cfg = config or OAFSBacktestConfig()
     risk = RiskEngine(RiskConfig(max_risk_per_trade_pct=cfg.risk_fraction * 100,
                                  max_daily_loss_pct=cfg.max_daily_loss_pct,
                                  max_consecutive_losses=cfg.max_consecutive_losses))
     m15 = frames['M15'].sort_index()
+    if start is not None:
+        s = pd.Timestamp(start); s = s.tz_localize('UTC') if s.tzinfo is None else s.tz_convert('UTC'); m15 = m15.loc[m15.index >= s]
+    if end is not None:
+        e = pd.Timestamp(end); e = e.tz_localize('UTC') if e.tzinfo is None else e.tz_convert('UTC'); m15 = m15.loc[m15.index < e]
     trades, rejects = [], []
     equity_r = peak_r = max_dd = 0.0
     consecutive_losses = 0
