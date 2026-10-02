@@ -8,6 +8,7 @@ from .monte_carlo import monte_carlo
 from .portfolio_backtest import combine_trade_logs, summarize_portfolio
 from .regime_analysis import summarize_by_regime
 from .validation import equity_stats, walk_forward_splits
+from .equity import equity_frame, write_equity_charts
 
 def _utc(value) -> pd.Timestamp:
     ts = pd.Timestamp(value)
@@ -116,6 +117,8 @@ def build_validation_report(
             "warning": "Stress simulation of observed trade outcomes, not proof of future performance.",
         },
         "data_quality": data_quality or {},
+        "_trades": trades,
+        "_rejections": [dict(x, instrument=r.get("instrument")) for r in results for x in r.get("rejections", [])],
     }
 
 def write_validation_report(report: dict, directory="reports/validation") -> Path:
@@ -124,4 +127,27 @@ def write_validation_report(report: dict, directory="reports/validation") -> Pat
     (out / "summary.json").write_text(json.dumps(report, indent=2, default=str))
     pairs = report.get("pairs", {})
     pd.DataFrame(pairs.values()).assign(instrument=list(pairs.keys())).to_csv(out / "pairs.csv", index=False)
+
+    trades = []
+    for pair in pairs.values():
+        trades.extend(pair.get("trade_log", []))
+    # Pair summaries intentionally omit trade logs; recover the combined log from the report inputs
+    # when this writer is called with the optional embedded trade data.
+    if report.get("_trades"):
+        trades = report["_trades"]
+    if trades:
+        trade_df = pd.DataFrame(trades)
+        trade_df.to_csv(out / "trades.csv", index=False)
+        equity_frame(trades).to_csv(out / "equity.csv", index=False)
+        write_equity_charts(trades, out / "charts")
+
+    rejections = report.get("_rejections", [])
+    if rejections:
+        pd.DataFrame(rejections).to_csv(out / "rejections.csv", index=False)
+
+    # Internal report payloads are useful for artifact generation but should not leak into summary.json.
+    summary = dict(report)
+    summary.pop("_trades", None)
+    summary.pop("_rejections", None)
+    (out / "summary.json").write_text(json.dumps(summary, indent=2, default=str))
     return out / "summary.json"
