@@ -12,6 +12,9 @@ def provider_from_env() -> MarketDataAdapter:
         client = MT5Client()
         client.connect()
         return client
+    if provider == "dukascopy":
+        from .dukascopy_client import DukascopyClient
+        return DukascopyClient()
     if provider == "oanda":
         from .oanda_client import OandaClient
         return OandaClient.from_env()
