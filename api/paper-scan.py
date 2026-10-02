@@ -18,6 +18,8 @@ from orion_trading.scanner import MarketScanner
 from orion_trading.signal_scoring import score_candidate
 from orion_trading.portfolio_risk import PortfolioPosition, PortfolioRiskGate
 from orion_trading.models import Direction
+from orion_trading.portfolio_risk import PortfolioPosition, PortfolioRiskGate
+from orion_trading.models import Direction
 from orion_trading.trade_planner import plan_trade
 from orion_trading.supabase_paper_store import SupabasePaperStore
 
