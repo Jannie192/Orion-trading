@@ -8,6 +8,8 @@ import pandas as pd
 from .models import Direction
 from .trading_engine import TradingEngine, TradingEngineConfig
 
+# Research-grade wrapper retained for compatibility with the existing engine.
+
 @dataclass(frozen=True)
 class BacktestConfig:
     initial_equity: float = 10_000.0
