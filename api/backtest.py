@@ -51,38 +51,32 @@ def run(instrument: str, timeframe: str, days: int):
     for trade in result.trades:
         equity += float(trade.pnl)
         payload["equity_curve"].append({"time": trade.exit_time.isoformat(), "equity": equity})
-    replay = []
-    trade_by_entry = {t.entry_time.isoformat(): t for t in result.trades}
-    trade_by_exit = {t.exit_time.isoformat(): t for t in result.trades}
-    running_equity = float(result.initial_equity)
-    peak_equity = running_equity
-    trade_index = 0
-    if not candles.empty:
-        for ts, row in candles.sort_index().iterrows():
-            key = ts.to_pydatetime().isoformat()
-            exited = trade_by_exit.get(key)
-            if exited is not None:
-                running_equity += float(exited.pnl)
-                trade_index += 1
-                peak_equity = max(peak_equity, running_equity)
-            entered = trade_by_entry.get(key)
-            action = "ENTER" if entered is not None else ("EXIT" if exited is not None else "WAIT")
-            replay.append({
-                "time": key,
-                "open": float(row["open"]),
-                "high": float(row["high"]),
-                "low": float(row["low"]),
-                "close": float(row["close"]),
-                "volume": float(row["volume"]) if "volume" in row else 0.0,
-                "equity": running_equity,
-                "drawdown_pct": ((peak_equity-running_equity)/peak_equity*100) if peak_equity else 0.0,
-                "action": action,
-                "trade_index": trade_index,
-                "trade": ({"direction": entered.direction.value, "entry": entered.entry, "exit": entered.exit,
-                           "pnl": entered.pnl, "reason": entered.reason} if entered is not None else None),
-            })
-    payload["replay"] = replay
-    payload["replay_bars"] = len(replay)
+    result, replay = Backtester(config=BacktestConfig(initial_equity=10000.0, risk_per_trade_pct=0.50)).run_replay(
+        candles, instrument=instrument
+    )
+    payload = {
+        "initial_equity": result.initial_equity,
+        "final_equity": result.final_equity,
+        "total_return_pct": result.total_return_pct,
+        "max_drawdown_pct": result.max_drawdown_pct,
+        "wins": result.wins,
+        "losses": result.losses,
+        "win_rate_pct": result.win_rate_pct,
+        "profit_factor": None if result.profit_factor == float("inf") else result.profit_factor,
+        "timeframe": timeframe,
+        "days": days,
+        "mode": "research",
+        "live_trading_enabled": False,
+        "trades_count": len(result.trades),
+        "trade_log": [t.__dict__ | {"direction": t.direction.value, "entry_time": t.entry_time.isoformat(), "exit_time": t.exit_time.isoformat()} for t in result.trades],
+        "equity_curve": [],
+        "replay": replay,
+        "replay_bars": len(replay),
+    }
+    equity = float(result.initial_equity)
+    for trade in result.trades:
+        equity += float(trade.pnl)
+        payload["equity_curve"].append({"time": trade.exit_time.isoformat(), "equity": equity})
     return payload
 
 class handler(BaseHTTPRequestHandler):
