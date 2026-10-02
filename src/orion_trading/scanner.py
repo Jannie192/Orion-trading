@@ -1,43 +1,53 @@
 from __future__ import annotations
 
-import os
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Iterable
 
 import pandas as pd
 
-from .oanda_client import OandaClient, OandaConfig
+from .market_data import MarketDataAdapter
 from .regime import classify_regime
 from .signals import detect
+from .models import SignalCandidate
 
-INSTRUMENTS = ("EUR_USD", "GBP_USD", "USD_JPY", "USD_CHF", "AUD_USD", "USD_CAD", "NZD_USD")
-GRANULARITIES = ("D", "H4", "H1", "M15")
-
-
-def client_from_env() -> OandaClient:
-    token = os.environ.get("OANDA_API_TOKEN", "")
-    account = os.environ.get("OANDA_ACCOUNT_ID", "")
-    practice = os.environ.get("OANDA_PRACTICE", "true").lower() != "false"
-    if not token or not account:
-        raise RuntimeError("OANDA_API_TOKEN and OANDA_ACCOUNT_ID are required")
-    return OandaClient(OandaConfig(account_id=account, token=token, practice=practice))
+DEFAULT_TIMEFRAMES = ("H4", "H1", "M15")
 
 
-def candles_frame(payload: dict) -> pd.DataFrame:
-    rows = []
-    for candle in payload.get("candles", []):
-        if not candle.get("complete", False):
-            continue
-        mid = candle.get("mid") or candle.get("bid") or candle.get("ask")
-        if not mid:
-            continue
-        rows.append({"time": pd.Timestamp(candle["time"]), "open": float(mid["o"]), "high": float(mid["h"]), "low": float(mid["l"]), "close": float(mid["c"]), "volume": int(candle.get("volume", 0))})
-    if not rows:
-        return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
-    return pd.DataFrame(rows).set_index("time").sort_index()
+@dataclass(frozen=True)
+class ScanResult:
+    instrument: str
+    timeframe: str
+    scanned_at: datetime
+    regime: str
+    direction: str
+    candidates: tuple[SignalCandidate, ...]
 
 
-def scan_once(client: OandaClient, instrument: str, granularity: str = "M15", count: int = 500):
-    frame = candles_frame(client.candles(instrument, granularity, count))
-    if frame.empty:
-        return []
-    regime, _direction = classify_regime(frame)
-    return detect(frame, regime, instrument)
+class MarketScanner:
+    """Broker-neutral multi-market scanner.
+
+    It discovers and explains opportunities; execution remains separate.
+    """
+
+    def __init__(self, provider: MarketDataAdapter, timeframes: Iterable[str] = DEFAULT_TIMEFRAMES):
+        self.provider = provider
+        self.timeframes = tuple(timeframes)
+
+    def scan(self, instruments: Iterable[str], *, start: datetime, end: datetime) -> list[ScanResult]:
+        results: list[ScanResult] = []
+        for instrument in instruments:
+            for timeframe in self.timeframes:
+                candles = self.provider.candles(instrument, timeframe, start, end)
+                if candles.empty or len(candles) < 60:
+                    results.append(ScanResult(instrument, timeframe, end, "INSUFFICIENT_DATA", "NEUTRAL", ()))
+                    continue
+                candles = candles.sort_index()
+                regime, direction = classify_regime(candles)
+                candidates = tuple(detect(candles, regime, instrument))
+                results.append(ScanResult(instrument, timeframe, end, regime.value, direction.value, candidates))
+        return results
+
+    @staticmethod
+    def actionable(results: Iterable[ScanResult]) -> list[SignalCandidate]:
+        return [c for r in results for c in r.candidates if c.valid]
