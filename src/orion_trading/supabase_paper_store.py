@@ -30,7 +30,7 @@ class SupabasePaperStore:
         }
 
     def _request(self, method: str, path: str, **kwargs: Any) -> list[dict[str, Any]]:
-        response = requests.request(method, f"{self.url}/rest/v1/{path}", headers=self._headers, timeout=15, **kwargs)
+        headers = {**self._headers, **kwargs.pop("headers", {})}\n        response = requests.request(method, f"{self.url}/rest/v1/{path}", headers=headers, timeout=15, **kwargs)
         if not response.ok:
             raise RuntimeError(f"Supabase request failed ({response.status_code}): {response.text[:500]}")
         return response.json() if response.content else []
