@@ -15,6 +15,7 @@ if str(SRC) not in sys.path:
 from orion_trading.paper_signal_service import PaperSignalService
 from orion_trading.provider_factory import provider_from_env
 from orion_trading.scanner import MarketScanner
+from orion_trading.signal_scoring import score_candidate
 from orion_trading.trade_planner import plan_trade
 from orion_trading.supabase_paper_store import SupabasePaperStore
 
@@ -50,7 +51,8 @@ def scan_and_persist():
     decisions = []
     results = []
     try:
-        for result in scanner.scan(INSTRUMENTS, start=start, end=end):
+        scan_results = scanner.scan(INSTRUMENTS, start=start, end=end)
+        for result in scan_results:
             results.append({
                 "instrument": result.instrument,
                 "timeframe": result.timeframe,
@@ -65,7 +67,18 @@ def scan_and_persist():
             candles = provider.candles(result.instrument, result.timeframe, start, end)
             for candidate in result.candidates:
                 planned = plan_trade(candidate, candles)
-                bucket.append(_candidate(planned))
+                scored = score_candidate(planned, timeframe=result.timeframe, aligned_timeframes=tuple(
+                    r.timeframe for r in scan_results
+                    if r.instrument == result.instrument
+                    and r.timeframe != result.timeframe
+                    and any(x.valid and x.direction == planned.direction for x in r.candidates)
+                ))
+                item = _candidate(planned)
+                item["score"] = scored.score
+                item["confidence"] = scored.confidence
+                item["confirmations"] = list(scored.confirmations)
+                item["penalties"] = list(scored.penalties)
+                bucket.append(item)
                 if planned.valid:
                     decisions.append({
                         "timeframe": result.timeframe,
