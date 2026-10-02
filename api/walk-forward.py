@@ -40,7 +40,7 @@ def run(instrument,timeframe,days,risks,stops,rewards,train_bars=None,test_bars=
     train_n=int(train_bars or max(100,n*.5)); test_n=int(test_bars or max(40,n*.15)); step=int(step_bars or test_n)
     train_n=max(100,min(train_n,n-40)); test_n=max(40,min(test_n,n-train_n)); step=max(20,step)
     folds=[]; offset=0
-    while offset+train_n+test_n<=n and len(folds)<8:
+    while offset+train_n+test_n<=n and len(folds)<2:
         train=candles.iloc[offset:offset+train_n]; test=candles.iloc[offset+train_n:offset+train_n+test_n]
         fold_results=[]
         for risk in rv:
