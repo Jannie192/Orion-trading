@@ -15,6 +15,14 @@ on:
         description: "Monte Carlo simulations"
         required: true
         default: "10000"
+      provider:
+        description: "Market-data provider"
+        required: true
+        default: "dukascopy"
+      instruments:
+        description: "Space-separated instrument symbols"
+        required: true
+        default: "EUR_USD GBP_USD USD_JPY USD_CHF AUD_USD USD_CAD NZD_USD"
 
 jobs:
   research:
@@ -28,13 +36,13 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: pip install -e ".[dev,dukascopy]"
       - name: Run ORION research
-        env:
-          ORION_DATA_PROVIDER: dukascopy
         run: |
           python scripts/run_research.py \
             --start "${{ inputs.start }}" \
             --end "${{ inputs.end }}" \
             --simulations "${{ inputs.simulations }}" \
+            --provider "${{ inputs.provider }}" \
+            --instruments ${{ inputs.instruments }} \
             --output reports/validation
       - name: Upload research report
         uses: actions/upload-artifact@v4
