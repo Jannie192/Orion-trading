@@ -3,7 +3,7 @@ name = "orion-trading"
 version = "0.1.0"
 description = "Research-first adaptive FX trading system"
 requires-python = ">=3.11"
-dependencies = ["numpy>=2.0,<3", "pandas>=2.2,<3", "pydantic>=2.7,<3"]
+dependencies = ["numpy>=2.0,<3", "pandas>=2.2,<3", "pydantic>=2.7,<3", "requests>=2.32,<3"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8,<9", "ruff>=0.6,<1"]
