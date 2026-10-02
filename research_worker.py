@@ -82,8 +82,8 @@ def _update_job(job_id, patch):
 
 def _run_job(job_id, payload):
     try:
-        _update_job(job_id, {"status": "RUNNING", "progress": 5, "stage": "FETCHING_MARKET_DATA", "started_at": _now()})
-        _update_job(job_id, {"progress": 15, "stage": "BUILDING_WALK_FORWARD_FOLDS"})
+        _update_job(job_id, {"status": "RUNNING", "progress_pct": 5, "started_at": _now()})
+        _update_job(job_id, {"progress_pct": 15})
         result = MODULE.run(
             str(payload.get("instrument", "BTCUSDT")).upper(),
             str(payload.get("timeframe", "H1")).upper(),
@@ -98,9 +98,8 @@ def _run_job(job_id, payload):
         )
         _update_job(job_id, {
             "status": "COMPLETED",
-            "progress": 100,
-            "stage": "COMPLETED",
-            "result": {**result, "worker": "railway"},
+            "progress_pct": 100,
+            "result": {**result, "worker": "railway", "stage": "COMPLETED"},
             "completed_at": _now(),
             "error": None,
         })
@@ -108,8 +107,7 @@ def _run_job(job_id, payload):
         try:
             _update_job(job_id, {
                 "status": "FAILED",
-                "progress": 100,
-                "stage": "FAILED",
+                "progress_pct": 100,
                 "error": str(exc),
                 "completed_at": _now(),
             })
