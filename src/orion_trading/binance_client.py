@@ -117,7 +117,7 @@ class BinanceClient:
             if next_cursor <= cursor:
                 break
             cursor = next_cursor
-            if len(batch) < self.page_limit:
+            if cursor > end_ms or len(batch) < self.page_limit:
                 break
 
         if not rows:
