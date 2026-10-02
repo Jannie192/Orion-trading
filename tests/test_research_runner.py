@@ -5,7 +5,7 @@ from orion_trading.research_runner import research_frame, run_research
 
 def _frame(seed: float):
     idx = pd.date_range("2026-01-01", periods=70, freq="h", tz="UTC")
-    close = pd.Series(seed + range(70).__iter__().__next__() if False else [seed + i for i in range(70)], index=idx)
+    close = pd.Series([seed + i for i in range(70)], index=idx, dtype=float)
     return pd.DataFrame(
         {
             "open": close - 0.25,
