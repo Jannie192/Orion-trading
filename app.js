@@ -180,4 +180,4 @@ async function refreshPaperState(){try{const r=await fetch(state.api,{cache:"no-
 async function refreshScan(){try{const r=await fetch(state.scanApi,{cache:"no-store"}),d=await r.json();if(!r.ok||d.mode!=="paper"||d.live_trading_enabled!==false)throw new Error("unsafe scan response");scanData=d;scanOnline=true}catch(e){scanOnline=false}render()}
 $$(".nav-item").forEach(b=>b.onclick=()=>{$$(".nav-item").forEach(x=>x.classList.remove("active"));b.classList.add("active");state.view=b.dataset.view;render()});
 $("#customize").onclick=customize;$("#refresh").onclick=refreshPaperState;$("#customize-dialog").addEventListener("close",()=>{save();render()});
-chips();render();refreshPaperState();refreshScan();refreshStrategyHistory();refreshResearchIterations();setInterval(refreshPaperState,10000);setInterval(refreshScan,60000);
+chips();render();refreshPaperState();refreshScan();refreshStrategyHistory();refreshResearchIterations();refreshCrossResearch();setInterval(refreshPaperState,10000);setInterval(refreshScan,60000);
