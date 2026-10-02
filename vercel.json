@@ -1,10 +1,7 @@
 {
   "rewrites": [
-    { "source": "/", "destination": "/api/main?route=dashboard" },
-    { "source": "/styles.css", "destination": "/api/main?route=styles" },
-    { "source": "/app.js", "destination": "/api/main?route=app" },
-    { "source": "/api/paper-scan", "destination": "/api/main?route=paper-scan" },
-    { "source": "/api/paper-state", "destination": "/api/main?route=paper-state" },
-    { "source": "/api/scan", "destination": "/api/main?route=scan" }
+    { "source": "/api/paper-scan", "destination": "/api/main" },
+    { "source": "/api/paper-state", "destination": "/api/main" },
+    { "source": "/api/scan", "destination": "/api/main" }
   ]
 }
