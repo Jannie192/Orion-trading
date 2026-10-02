@@ -11,7 +11,7 @@ mt5 = ["MetaTrader5>=5.0.29,<6"]
 dukascopy = ["dukascopy-python==4.0.1"]
 
 [tool.vercel]
-entrypoint = "api.paper-scan:handler"
+entrypoint = "api.main:handler"
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
