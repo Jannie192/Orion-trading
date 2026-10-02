@@ -51,7 +51,8 @@ def _window(first_open, hours=2):
 
 def test_binance_candles_normalize_to_canonical_ohlcv():
     first_open = 1760000000000
-    start, end = _window(first_open)
+    start, _ = _window(first_open)
+    end = (pd.Timestamp(first_open, unit="ms", tz="UTC") + pd.Timedelta(minutes=15)).to_pydatetime()
     session = FakeSession(
         [[_candle(first_open), _candle(first_open + 15 * 60 * 1000, "101")]]
     )
