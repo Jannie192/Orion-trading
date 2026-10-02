@@ -10,9 +10,6 @@ dev = ["pytest>=8,<9", "ruff>=0.6,<1"]
 mt5 = ["MetaTrader5>=5.0.29,<6"]
 dukascopy = ["dukascopy-python==4.0.1"]
 
-[tool.vercel]
-entrypoint = "api.main:handler"
-
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
