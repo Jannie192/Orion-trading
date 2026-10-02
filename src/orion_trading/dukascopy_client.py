@@ -5,8 +5,10 @@ import pandas as pd
 
 try:
     import dukascopy_python as dukas
+    from dukascopy_python import instruments as dukas_instruments
 except ImportError:
     dukas = None
+    dukas_instruments = None
 
 TIMEFRAMES = {
     "M15": ("INTERVAL_MIN_15", "INTERVAL_MINUTE_15", "INTERVAL_M15"),
@@ -33,8 +35,8 @@ def _constant(prefixes: tuple[str, ...], value: str | None = None):
         candidate = getattr(dukas, name, None)
         if candidate is not None:
             return candidate
-    if value is not None:
-        for name, candidate in vars(dukas).items():
+    if value is not None and dukas_instruments is not None:
+        for name, candidate in vars(dukas_instruments).items():
             if name.startswith("INSTRUMENT_") and candidate == value:
                 return candidate
     raise RuntimeError(f"Dukascopy constant not found: {prefixes}")
@@ -42,7 +44,12 @@ def _constant(prefixes: tuple[str, ...], value: str | None = None):
 
 def _instrument(symbol: str):
     value = INSTRUMENTS.get(symbol, symbol)
-    return _constant((), value=value)
+    if dukas_instruments is None:
+        raise RuntimeError("dukascopy-python instruments module is unavailable")
+    for name, candidate in vars(dukas_instruments).items():
+        if name.startswith("INSTRUMENT_") and candidate == value:
+            return candidate
+    raise ValueError(f"Unsupported Dukascopy instrument: {symbol} ({value})")
 
 
 def _interval(timeframe: str):
@@ -71,8 +78,10 @@ class DukascopyClient:
         start: datetime,
         end: datetime,
     ) -> pd.DataFrame:
-        start = pd.Timestamp(start).tz_convert("UTC").to_pydatetime()
-        end = pd.Timestamp(end).tz_convert("UTC").to_pydatetime()
+        start = pd.Timestamp(start)
+        end = pd.Timestamp(end)
+        start = (start.tz_localize("UTC") if start.tzinfo is None else start.tz_convert("UTC")).to_pydatetime()
+        end = (end.tz_localize("UTC") if end.tzinfo is None else end.tz_convert("UTC")).to_pydatetime()
 
         frame = dukas.fetch(
             _instrument(instrument),
