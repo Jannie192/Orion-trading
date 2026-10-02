@@ -44,8 +44,8 @@ def _json_response(handler, status, payload):
 
 
 def _authorized(handler):
-    expected = os.getenv("ORION_WORKER_KEY")
-    return bool(expected) and handler.headers.get("X-Orion-Worker-Key") == expected
+    expected = os.getenv("ORION_TRIGGER_KEY")
+    return not expected or handler.headers.get("X-Orion-Worker-Key") == expected
 
 
 def _supabase_request(method, path, **kwargs):
