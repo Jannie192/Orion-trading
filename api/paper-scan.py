@@ -15,6 +15,7 @@ if str(SRC) not in sys.path:
 from orion_trading.paper_signal_service import PaperSignalService
 from orion_trading.provider_factory import provider_from_env
 from orion_trading.scanner import MarketScanner
+from orion_trading.trade_planner import plan_trade
 from orion_trading.supabase_paper_store import SupabasePaperStore
 
 INSTRUMENTS = ("BTCUSDT", "ETHUSDT")
@@ -59,12 +60,16 @@ def scan_and_persist():
                 "candidates": [],
             })
             bucket = results[-1]["candidates"]
+            # Re-fetch the timeframe candles so valid signals receive concrete
+            # entry/stop/target levels before the paper-order safety gate.
+            candles = provider.candles(result.instrument, result.timeframe, start, end)
             for candidate in result.candidates:
-                bucket.append(_candidate(candidate))
-                if candidate.valid:
+                planned = plan_trade(candidate, candles)
+                bucket.append(_candidate(planned))
+                if planned.valid:
                     decisions.append({
                         "timeframe": result.timeframe,
-                        "candidate": candidate,
+                        "candidate": planned,
                     })
     finally:
         close = getattr(provider, "close", None)
