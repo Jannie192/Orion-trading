@@ -1,0 +1,36 @@
+name: ORION research result analysis
+
+on:
+  workflow_run:
+    workflows: ["ORION crypto research"]
+    types: [completed]
+
+permissions:
+  actions: read
+
+jobs:
+  analyze:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - run: pip install pandas
+      - name: Download research artifact
+        uses: actions/download-artifact@v5
+        with:
+          name: orion-crypto-research
+          path: research-artifact
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Analyze results
+        run: python scripts/analyze_research_artifact.py
+      - name: Upload analysis
+        uses: actions/upload-artifact@v4
+        with:
+          name: orion-crypto-research-analysis
+          path: research-analysis/
+          if-no-files-found: error
