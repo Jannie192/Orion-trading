@@ -16,6 +16,8 @@ from orion_trading.paper_signal_service import PaperSignalService
 from orion_trading.provider_factory import provider_from_env
 from orion_trading.scanner import MarketScanner
 from orion_trading.signal_scoring import score_candidate
+from orion_trading.portfolio_risk import PortfolioPosition, PortfolioRiskGate
+from orion_trading.models import Direction
 from orion_trading.trade_planner import plan_trade
 from orion_trading.supabase_paper_store import SupabasePaperStore
 
@@ -90,9 +92,39 @@ def scan_and_persist():
             close()
 
     service = PaperSignalService(store)
+    gate = PortfolioRiskGate()
+    snapshot = store.snapshot()
+    existing_positions = [
+        PortfolioPosition(
+            instrument=p["instrument"],
+            direction=Direction(p["direction"].upper()),
+            notional=float(p.get("entry", 0)) * float(p.get("units", 0)),
+            risk_amount=abs(float(p.get("entry", 0)) - float(p.get("stop", 0))) * float(p.get("units", 0)),
+        )
+        for p in snapshot.get("open_positions", [])
+    ]
+    equity = float(snapshot.get("account", {}).get("equity", 0) or 0)
     persisted = []
     for item in decisions:
-        decision = service.submit(item["candidate"], item["timeframe"])
+        candidate = item["candidate"]
+        proposed_risk_pct = 0.5
+        portfolio = gate.approve(
+            equity=equity,
+            proposed_instrument=candidate.instrument,
+            proposed_direction=candidate.direction,
+            proposed_risk_pct=proposed_risk_pct,
+            positions=existing_positions,
+        )
+        if not portfolio.approved:
+            persisted.append({
+                "instrument": candidate.instrument,
+                "timeframe": item["timeframe"],
+                "order_id": None,
+                "accepted": False,
+                "reason": portfolio.reason,
+            })
+            continue
+        decision = service.submit(candidate, item["timeframe"])
         persisted.append({
             "instrument": item["candidate"].instrument,
             "timeframe": item["timeframe"],
