@@ -53,6 +53,28 @@ class SupabaseStrategyStore:
     def insights(self, limit: int = 50) -> list[dict[str, Any]]:
         return self._request("GET", f"research_insights?select=*&order=created_at.desc&limit={max(1,min(limit,100))}")
 
+    def create_iteration(self, payload: dict[str, Any]) -> dict[str, Any]:
+        rows = self._request("POST", "research_iterations", json=payload,
+            headers={**self.headers, "Prefer": "return=representation"})
+        return rows[0]
+
+    def iterations(self, limit: int = 50) -> list[dict[str, Any]]:
+        return self._request("GET", f"research_iterations?select=*&order=created_at.desc&limit={max(1,min(limit,100))}")
+
+    def iteration(self, iteration_id: str) -> dict[str, Any]:
+        rows = self._request("GET", f"research_iterations?select=*&iteration_id=eq.{iteration_id}&limit=1")
+        if not rows:
+            raise ValueError("ITERATION_NOT_FOUND")
+        return rows[0]
+
+    def update_iteration(self, iteration_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        rows = self._request("PATCH", f"research_iterations?iteration_id=eq.{iteration_id}",
+            json=payload,
+            headers={**self.headers, "Prefer": "return=representation"})
+        if not rows:
+            raise ValueError("ITERATION_NOT_FOUND")
+        return rows[0]
+
     def promote(self, strategy_id: str, status: str) -> dict[str, Any]:
         if status not in {"DRAFT","VALIDATED","PAPER_CANDIDATE","PAPER_ACTIVE"}:
             raise ValueError("INVALID_STRATEGY_STATUS")
