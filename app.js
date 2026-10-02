@@ -76,7 +76,7 @@ async function persistExperiment(d){
   const payload={action:"experiment",strategy_name:$("#lab-name").value,strategy_version:$("#lab-version").value,instrument:d.instrument,timeframe:d.timeframe,days:d.days,grid:{risks:$("#lab-risks").value,stops:$("#lab-stops").value,rewards:$("#lab-rewards").value},validation:d.validation,results:d.results};
   const r=await fetch("/api/strategy-history",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});const out=await r.json();if(!r.ok)throw new Error(out.error||"history save failed");return out.experiment;
 }
-async function openExperimentReplay(id){try{const r=await fetch('/api/experiment-replay?experiment_id='+encodeURIComponent(id)+'&result_index=0',{cache:'no-store'}),d=await r.json();if(!r.ok)throw new Error(d.error||'Replay failed');state.view='backtests';render();renderReplay(d);window.scrollTo({top:0,behavior:'smooth'});}catch(e){alert(e.message)}}
+async function openExperimentReplay(id,index=0){try{const r=await fetch('/api/experiment-replay?experiment_id='+encodeURIComponent(id)+'&result_index='+index,{cache:'no-store'}),d=await r.json();if(!r.ok)throw new Error(d.error||'Replay failed');state.view='backtests';render();renderReplay(d);window.scrollTo({top:0,behavior:'smooth'});}catch(e){alert(e.message)}}
 function populateComparison(){
   const es=strategyHistory.experiments||[], a=$("#compare-a"), b=$("#compare-b"); if(!a||!b)return;
   const opts=es.map((e,i)=>'<option value="'+i+'">'+e.strategy_name+' v'+e.strategy_version+' • '+e.instrument+' '+e.timeframe+' • '+new Date(e.created_at).toLocaleString()+'</option>').join("");
