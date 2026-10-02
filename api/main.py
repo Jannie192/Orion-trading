@@ -3,7 +3,7 @@ from __future__ import annotations
 import importlib.util
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 ROOT = Path(__file__).resolve().parent.parent
 API_DIR = ROOT / "api"
@@ -25,7 +25,11 @@ def _load_handler(filename: str):
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        route = urlparse(self.path).path
+        parsed = urlparse(self.path)
+        route = parsed.path
+        if route == "/api/main":
+            key = parse_qs(parsed.query).get("route", [""])[0]
+            route = f"/api/{key}" if key else route
         filename = _ROUTES.get(route)
         if filename is None:
             self.send_response(404)
