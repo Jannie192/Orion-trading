@@ -55,13 +55,37 @@ def build_validation_report(
     test_days: int = 60,
     step_days: int = 60,
     simulations: int = 10000,
+    walk_forward: dict | None = None,
 ) -> dict:
     trades_df = combine_trade_logs(results)
     trades = trades_df.to_dict("records") if not trades_df.empty else []
     portfolio = summarize_portfolio(results)
     pnl = trades_df["pnl_r"].astype(float).tolist() if not trades_df.empty else []
     splits = walk_forward_splits(_utc(start), _utc(end), train_days, test_days, step_days)
-    mc = monte_carlo(pnl, simulations=simulations) if pnl else None
+
+    wf = walk_forward
+    if wf is None:
+        wf = {
+            "method": "rolling_windows",
+            "train_days": train_days,
+            "test_days": test_days,
+            "step_days": step_days,
+            "folds": [
+                {
+                    "train": {"name": a.name, "start": a.start.isoformat(), "end": a.end.isoformat()},
+                    "test": {"name": b.name, "start": b.start.isoformat(), "end": b.end.isoformat()},
+                }
+                for a, b in splits
+            ],
+            "performance_evaluated": False,
+            "note": "Fold metadata only; this report does not claim fold-level out-of-sample performance.",
+        }
+
+    oos_results = wf.get("oos_results", []) if isinstance(wf, dict) else []
+    oos_trades_df = combine_trade_logs(oos_results) if oos_results else pd.DataFrame()
+    oos_pnl = oos_trades_df["pnl_r"].astype(float).tolist() if not oos_trades_df.empty else []
+    mc_pnl = oos_pnl if oos_pnl else pnl
+    mc = monte_carlo(mc_pnl, simulations=simulations) if mc_pnl else None
 
     return {
         "schema_version": "1.0",
@@ -88,21 +112,7 @@ def build_validation_report(
         "regimes": summarize_by_regime(trades),
         "opportunity_types": _setup_analysis(trades),
         "rejections": _rejection_analysis(results),
-        "walk_forward": {
-            "method": "rolling_windows",
-            "train_days": train_days,
-            "test_days": test_days,
-            "step_days": step_days,
-            "folds": [
-                {
-                    "train": {"name": a.name, "start": a.start.isoformat(), "end": a.end.isoformat()},
-                    "test": {"name": b.name, "start": b.start.isoformat(), "end": b.end.isoformat()},
-                }
-                for a, b in splits
-            ],
-            "performance_evaluated": False,
-            "note": "Fold metadata only; this report does not claim fold-level out-of-sample performance.",
-        },
+        "walk_forward": wf,
         "monte_carlo": None if mc is None else {
             "simulations": mc.simulations,
             "trades": mc.trades,
@@ -114,13 +124,13 @@ def build_validation_report(
             "p95_max_losing_streak": mc.p95_max_losing_streak,
             "negative_finish_pct": mc.negative_finish_pct,
             "method": "iid_bootstrap_with_replacement",
+            "source": "walk_forward_oos" if oos_pnl else "full_sample_backtest",
             "warning": "Stress simulation of observed trade outcomes, not proof of future performance.",
         },
         "data_quality": data_quality or {},
         "_trades": trades,
         "_rejections": [dict(x, instrument=r.get("instrument")) for r in results for x in r.get("rejections", [])],
     }
-
 def write_validation_report(report: dict, directory="reports/validation") -> Path:
     out = Path(directory)
     out.mkdir(parents=True, exist_ok=True)
