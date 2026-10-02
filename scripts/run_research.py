@@ -23,14 +23,20 @@ def main():
     parser.add_argument("--end", required=True)
     parser.add_argument("--output", default="reports/validation")
     parser.add_argument("--simulations", type=int, default=10000)
+    parser.add_argument("--provider", default=None)
+    parser.add_argument("--instruments", nargs="+", default=INSTRUMENTS)
     args = parser.parse_args()
 
     start, end = _utc(args.start), _utc(args.end)
+    if args.provider:
+        import os
+        os.environ["ORION_DATA_PROVIDER"] = args.provider
     provider = provider_from_env()
+    instruments = list(args.instruments)
     results = []
 
     try:
-        for instrument in INSTRUMENTS:
+        for instrument in instruments:
             ingest(provider, instrument, start, end)
             store = CsvDataStore()
             frames = {tf: store.load(instrument, tf) for tf in TIMEFRAMES}
@@ -40,7 +46,7 @@ def main():
         if close:
             close()
 
-    wf = run_walk_forward({i: {tf: CsvDataStore().load(i, tf) for tf in TIMEFRAMES} for i in INSTRUMENTS}, INSTRUMENTS, start, end)
+    wf = run_walk_forward({i: {tf: CsvDataStore().load(i, tf) for tf in TIMEFRAMES} for i in instruments}, instruments, start, end)
     report = build_validation_report(results, start, end, simulations=args.simulations, walk_forward=wf)
     path = write_validation_report(report, args.output)
     print(json.dumps(report["portfolio"], indent=2))
