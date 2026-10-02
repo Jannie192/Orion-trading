@@ -12,7 +12,10 @@ def _result(net_r, trades):
         "expectancy_r": net_r / trades if trades else 0.0,
         "max_drawdown_r": 1.0,
         "profit_factor": 1.5,
-        "trade_log": [],
+        "trade_log": [
+            {"pnl_r": net_r / trades if trades else 0.0, "exit_time": "2026-01-01T00:00:00Z"}
+            for _ in range(trades)
+        ],
     }
 
 
