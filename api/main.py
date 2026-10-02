@@ -13,6 +13,7 @@ _ROUTES = {
     "/api/paper-scan": "paper-scan.py",
     "/api/paper-state": "paper-state.py",
     "/api/scan": "scan.py",
+    "/api/backtest": "backtest.py",
 }
 
 _STATIC = {
