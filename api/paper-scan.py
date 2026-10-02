@@ -40,6 +40,8 @@ def _candidate(candidate):
 def scan_and_persist():
     store = SupabasePaperStore()
     provider_name = os.getenv("ORION_DATA_PROVIDER", "binance").lower()
+    if provider_name == "binance":
+        os.environ["ORION_DATA_PROVIDER"] = "binance"
     provider = provider_from_env()
     end = datetime.now(timezone.utc)
     start = end - timedelta(days=14)
