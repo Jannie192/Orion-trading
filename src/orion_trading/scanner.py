@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
 import os
 
 import pandas as pd
@@ -40,5 +39,5 @@ def scan_once(client: OandaClient, instrument: str, granularity: str = "M15", co
     frame = candles_frame(client.candles(instrument, granularity, count))
     if frame.empty:
         return []
-    regime = classify_regime(frame)
-    return detect(frame, regime)
+    regime, _direction = classify_regime(frame)
+    return detect(frame, regime, instrument)
