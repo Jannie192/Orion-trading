@@ -39,7 +39,9 @@ async function runBacktest(){
       ["Win rate",Number(data.win_rate_pct).toFixed(1)+"%"],
       ["Profit factor",Number(data.profit_factor).toFixed(2)],
       ["Max drawdown",Number(data.max_drawdown_pct).toFixed(2)+"%"]
-    ].map(x=>'<div class="card stat"><div class="card-title"><h3>'+x[0]+'</h3></div><div class="big">'+x[1]+'</div></div>').join("")+'</div><div class="sub" style="margin-top:14px">This is historical simulation, not a forecast. Results can change with data, costs, slippage and execution assumptions.</div>';
+    ].map(x=>'<div class="card stat"><div class="card-title"><h3>'+x[0]+'</h3></div><div class="big">'+x[1]+'</div></div>').join("")+'</div><div class="sub" style="margin-top:14px">Historical simulation only. Results can change with data, costs, slippage and execution assumptions.</div><div class="card" style="margin-top:14px"><div class="card-title"><h3>Trade-by-trade replay</h3><span class="pill">'+data.trades_count+' trades</span></div><div id="bt-trades"></div></div>';
+    const rows=(data.trade_log||[]).map((t,i)=>'<div class="activity-row"><span>#'+(i+1)+' '+t.direction+'</span><span>'+t.reason+'</span><strong>'+Number(t.pnl).toFixed(2)+'</strong></div>').join("");
+    $("#bt-trades").innerHTML=rows||'<div class="empty">No trades in this test window.</div>';
   }catch(e){box.textContent="Backtest error: "+e.message}
 }
 function render(){
