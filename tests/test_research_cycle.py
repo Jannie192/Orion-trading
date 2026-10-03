@@ -74,3 +74,63 @@ def test_research_cycle_persists_result_and_returns_run_id():
     assert result_store.calls[0]["strategy_version"] == "1.0"
     assert isinstance(result_store.calls[0]["result"], ResearchResult)
     assert result_store.calls[0]["start_at"].endswith("+00:00")
+
+
+class FakeExperimenter:
+    def __init__(self):
+        self.calls = []
+
+    def run(self, candles, **kwargs):
+        self.calls.append((candles, kwargs))
+        from orion_trading.strategy_experiments import StrategyExperimentResult
+        return StrategyExperimentResult(
+            strategy_name=kwargs["strategy_name"],
+            strategy_version=kwargs["strategy_version"],
+            instrument=kwargs["instrument"],
+            timeframe=kwargs["timeframe"],
+            variants=(),
+            best=None,
+        )
+
+
+class FakeExperimentStore:
+    def __init__(self):
+        self.calls = []
+
+    def record_strategy_experiment(self, **kwargs):
+        self.calls.append(kwargs)
+        return "experiment-123"
+
+
+def test_research_cycle_runs_and_persists_experiments_when_configured():
+    import pandas as pd
+
+    class Store(FakeStore):
+        def load(self, *args, **kwargs):
+            return pd.DataFrame(
+                {"open": [], "high": [], "low": [], "close": [], "volume": []},
+                index=pd.DatetimeIndex([], tz="UTC"),
+            )
+
+    manager = FakeManager()
+    manager.store = Store()
+    experimenter = FakeExperimenter()
+    experiment_store = FakeExperimentStore()
+
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    end = datetime(2026, 2, 1, tzinfo=timezone.utc)
+
+    ResearchCycle(
+        manager,
+        FakeBacktester(),
+        experimenter=experimenter,
+        experiment_store=experiment_store,
+        experiment_grids={"*": {"atr_stop_multiple": [1.0, 1.5]}},
+    ).run(["EURUSD"], ["H1"], start, end)
+
+    assert len(experimenter.calls) == 1
+    assert experimenter.calls[0][1]["instrument"] == "EURUSD"
+    assert experimenter.calls[0][1]["timeframe"] == "H1"
+    assert experimenter.calls[0][1]["parameter_grid"]["atr_stop_multiple"] == [1.0, 1.5]
+    assert len(experiment_store.calls) == 1
+    assert experiment_store.calls[0]["experiment"].instrument == "EURUSD"
