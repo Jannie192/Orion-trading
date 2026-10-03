@@ -94,6 +94,17 @@ class SupabaseStrategyStore:
             raise ValueError("RESEARCH_JOB_NOT_FOUND")
         return rows[0]
 
+    def update_version(self, strategy_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        rows = self._request(
+            "PATCH",
+            f"strategy_versions?strategy_id=eq.{strategy_id}",
+            json=payload,
+            headers={**self.headers, "Prefer": "return=representation"},
+        )
+        if not rows:
+            raise ValueError("STRATEGY_NOT_FOUND")
+        return rows[0]
+
     def promote(self, strategy_id: str, status: str) -> dict[str, Any]:
         if status not in {"DRAFT","VALIDATED","PAPER_CANDIDATE","PAPER_ACTIVE"}:
             raise ValueError("INVALID_STRATEGY_STATUS")
