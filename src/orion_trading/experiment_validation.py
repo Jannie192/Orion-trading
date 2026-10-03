@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Iterable
-
 import pandas as pd
 
 from .backtest import BacktestConfig, BacktestResult, Backtester
@@ -53,7 +51,7 @@ def validate_experiment(
     )
 
     fold_reports: list[dict] = []
-    oos_results: list[BacktestResult] = []
+    oos_results: list[tuple[BacktestResult, float]] = []
 
     for fold_number, (train, test) in enumerate(folds, start=1):
         scored: list[tuple[object, BacktestResult]] = []
@@ -85,12 +83,12 @@ def validate_experiment(
                 risk_per_trade_pct=best_candidate.parameters.get("risk_per_trade_pct", 0.50),
             ),
         ).run(test_frame, instrument=experiment.instrument)
-        oos_results.append(test_result)
+        oos_results.append((test_result, best_candidate.parameters.get("risk_per_trade_pct", 0.50)))
         fold_reports.append(
             {
                 "fold": fold_number,
-                "train": {"start": train.start.isoformat(), "end": train.end.isoformat()},
-                "test": {"start": test.start.isoformat(), "end": test.end.isoformat()},
+                "train_window": {"start": train.start.isoformat(), "end": train.end.isoformat()},
+                "test_window": {"start": test.start.isoformat(), "end": test.end.isoformat()},
                 "selected_rank": best_candidate.rank,
                 "selected_parameters": best_candidate.parameters,
                 "train": {
@@ -116,9 +114,10 @@ def validate_experiment(
         )
 
     pnl = []
-    for result in oos_results:
+    for result, risk_pct in oos_results:
+        risk_amount = max(cfg_equity(experiment) * risk_pct / 100.0, 1e-9)
         for trade in result.trades:
-            pnl.append(trade.pnl / max(cfg_equity(experiment) * 0.005, 1e-9))
+            pnl.append(trade.pnl / risk_amount)
     mc = monte_carlo(
         pnl,
         simulations=cfg.monte_carlo_simulations,
@@ -141,7 +140,7 @@ def validate_experiment(
             "p95_max_drawdown_r": mc.p95_max_drawdown_r,
             "p95_max_losing_streak": mc.p95_max_losing_streak,
             "negative_finish_pct": mc.negative_finish_pct,
-            "normalization": "pnl / (10,000 * 0.50%)",
+            "normalization": "each trade pnl / (validation starting equity * selected candidate risk %)",
         },
     }
 
