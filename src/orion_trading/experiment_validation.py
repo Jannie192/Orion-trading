@@ -145,6 +145,47 @@ def validate_experiment(
     }
 
 
+
+@dataclass(frozen=True)
+class CandidateApprovalConfig:
+    min_folds: int = 3
+    min_oos_trades: int = 30
+    min_median_net_r: float = 0.0
+    min_p05_net_r: float = 0.0
+    max_negative_finish_pct: float = 45.0
+    max_p95_drawdown_r: float = 12.0
+    max_p95_losing_streak: int = 10
+
+
+def approve_validation(validation: dict, *, config: CandidateApprovalConfig | None = None) -> dict:
+    """Apply deterministic quantitative gates before paper-trading admission."""
+    cfg = config or CandidateApprovalConfig()
+    mc = validation.get("monte_carlo") or {}
+    checks = {
+        "minimum_folds": validation.get("fold_count", 0) >= cfg.min_folds,
+        "minimum_oos_trades": validation.get("oos_trade_count", 0) >= cfg.min_oos_trades,
+        "median_net_r_non_negative": mc.get("median_net_r", 0.0) >= cfg.min_median_net_r,
+        "p05_net_r_non_negative": mc.get("p05_net_r", 0.0) >= cfg.min_p05_net_r,
+        "negative_finish_within_limit": mc.get("negative_finish_pct", 100.0) <= cfg.max_negative_finish_pct,
+        "p95_drawdown_within_limit": mc.get("p95_max_drawdown_r", float("inf")) <= cfg.max_p95_drawdown_r,
+        "p95_losing_streak_within_limit": mc.get("p95_max_losing_streak", 10**9) <= cfg.max_p95_losing_streak,
+    }
+    passed = all(checks.values())
+    return {
+        "status": "PASS" if passed else "FAIL",
+        "checks": checks,
+        "thresholds": {
+            "min_folds": cfg.min_folds,
+            "min_oos_trades": cfg.min_oos_trades,
+            "min_median_net_r": cfg.min_median_net_r,
+            "min_p05_net_r": cfg.min_p05_net_r,
+            "max_negative_finish_pct": cfg.max_negative_finish_pct,
+            "max_p95_drawdown_r": cfg.max_p95_drawdown_r,
+            "max_p95_losing_streak": cfg.max_p95_losing_streak,
+        },
+        "next_stage": "PAPER_TRADING_CANDIDATE" if passed else "RESEARCH",
+    }
+
 def cfg_equity(experiment: StrategyExperimentResult) -> float:
     """Use the experiment's common starting equity for validation."""
     if experiment.variants:
