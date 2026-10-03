@@ -264,28 +264,28 @@ class SupabaseMarketDataStore:
             strategy_id = rows[0]["strategy_id"]
 
         experiment_endpoint = f"{self.url}/rest/v1/strategy_experiments"
-        payload = serialise_experiment(experiment)
-        payload["strategy_id"] = strategy_id
-        payload["days"] = days
-        payload["grid"] = {
-            variant["parameters"]: variant["parameters"]
-            for variant in []
+        serialised = serialise_experiment(experiment)
+        grid = {
+            key: sorted({
+                variant.parameters[key]
+                for variant in experiment.variants
+                if key in variant.parameters
+            })
+            for key in (experiment.variants[0].parameters.keys() if experiment.variants else ())
         }
-        payload["grid"] = {
-            key: sorted(
-                {
-                    variant.parameters[key]
-                    for variant in experiment.variants
-                    if key in variant.parameters
-                }
-            )
-            for key in (
-                experiment.variants[0].parameters.keys() if experiment.variants else ()
-            )
-        }
-        payload["validation"] = {
-            "variant_count": experiment.variant_count,
-            "selection_rule": "score_then_return_then_drawdown_then_trade_count",
+        payload = {
+            "strategy_id": strategy_id,
+            "strategy_name": experiment.strategy_name,
+            "strategy_version": experiment.strategy_version,
+            "instrument": experiment.instrument,
+            "timeframe": experiment.timeframe.upper(),
+            "days": days,
+            "grid": grid,
+            "validation": {
+                "variant_count": experiment.variant_count,
+                "selection_rule": "score_then_return_then_drawdown_then_trade_count",
+            },
+            "results": serialised,
         }
         response = requests.post(
             experiment_endpoint,
