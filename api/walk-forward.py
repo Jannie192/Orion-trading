@@ -24,7 +24,7 @@ def _metrics(candles,instrument,risk,stop,reward):
             "trades_count":len(result.trades),"wins":result.wins,"losses":result.losses,"win_rate_pct":result.win_rate_pct,
             "profit_factor":None if pf==float("inf") else pf}
 
-def run(instrument,timeframe,days,risks,stops,rewards,train_bars=None,test_bars=None,step_bars=None):
+def run(instrument,timeframe,days,risks,stops,rewards,train_bars=None,test_bars=None,step_bars=None,max_folds=8):
     if instrument not in _ALLOWED or timeframe not in _TFS: raise ValueError("WALK_FORWARD_PROVIDER_CURRENTLY_SUPPORTS_CRYPTO_ONLY")
     days=max(7,min(int(days),365))
     rv=_floats(risks,.05,2); sv=_floats(stops,.5,4); wv=_floats(rewards,.5,6)
