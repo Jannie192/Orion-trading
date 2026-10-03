@@ -80,6 +80,40 @@ def _update_job(job_id, patch):
     return rows[0]
 
 
+def _claim_next_job():
+    rows = _supabase_request(
+        "GET",
+        "research_jobs?select=*&status=eq.QUEUED&order=created_at.asc&limit=1",
+    )
+    if not rows:
+        return None
+    job = rows[0]
+    claimed = _supabase_request(
+        "PATCH",
+        f"research_jobs?job_id=eq.{job['job_id']}&status=eq.QUEUED",
+        json={"status": "RUNNING", "progress_pct": 1, "started_at": _now(), "updated_at": _now()},
+        headers={"Prefer": "return=representation"},
+    )
+    return claimed[0] if claimed else None
+
+
+def _poll_queue():
+    while True:
+        try:
+            job = _claim_next_job()
+            if job:
+                payload = job.get("request") or job.get("grid") or {}
+                print(f"Claimed research job {job['job_id']}", flush=True)
+                _run_job(job["job_id"], payload)
+            else:
+                import time
+                time.sleep(3)
+        except Exception as exc:
+            print(f"Research queue poll error: {exc}", flush=True)
+            import time
+            time.sleep(5)
+
+
 def _run_job(job_id, payload):
     try:
         _update_job(job_id, {"status": "RUNNING", "progress_pct": 5, "started_at": _now()})
@@ -174,4 +208,5 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     print(f"ORION research worker listening on {HOST}:{PORT}", flush=True)
+    threading.Thread(target=_poll_queue, daemon=True).start()
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
