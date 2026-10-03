@@ -120,15 +120,8 @@ class PaperCandidateRunner:
         )
         evaluation = engine.evaluate(frame, instrument=instrument, equity=equity, execution=execution)
 
-        submitted = 0
-        duplicates = 0
-        for plan in evaluation.plans:
-            if plan.order is None or not plan.risk.approved:
-                continue
-            if plan.order.accepted:
-                submitted += 1
-            elif plan.order.reason == "DUPLICATE_ORDER":
-                duplicates += 1
+        submitted = sum(1 for result in evaluation.executions if result.accepted)
+        duplicates = sum(1 for result in evaluation.executions if result.reason == "DUPLICATE_ORDER")
 
         return CandidateRunResult(
             str(candidate["strategy_id"]), instrument, timeframe,
