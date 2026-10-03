@@ -128,3 +128,46 @@ def test_backtester_can_run_from_store(monkeypatch):
     assert result.initial_equity == 10_000.0
     assert store.called[0:2] == ("EUR_USD", "H1")
     assert store.called[2]["limit"] == 500
+
+
+def test_store_records_research_result_and_returns_run_id(monkeypatch):
+    from orion_trading.backtest import BacktestResult
+    from orion_trading.research_cycle import ResearchResult
+
+    store = SupabaseMarketDataStore(
+        url="https://example.supabase.co",
+        service_role_key="test-key",
+    )
+    calls = []
+
+    def fake_post(endpoint, headers, json, timeout):
+        calls.append((endpoint, headers, json))
+        class Response:
+            ok = True
+            status_code = 201
+            text = ""
+            def json(self):
+                return [{"run_id": "abc-123"}]
+        return Response()
+
+    monkeypatch.setattr(
+        "orion_trading.supabase_market_store.requests.post",
+        fake_post,
+    )
+
+    backtest = BacktestResult(10000, 11000, 10.0, 2.0, (), 1, 0, 100.0, float("inf"))
+    result = ResearchResult("EURUSD", "H1", 500, 100, 2, backtest)
+
+    run_id = store.record_research_result(
+        strategy_name="ORION",
+        strategy_version="1.0",
+        result=result,
+        start_at="2026-01-01T00:00:00+00:00",
+        end_at="2026-02-01T00:00:00+00:00",
+    )
+
+    assert run_id == "abc-123"
+    assert calls[0][0].endswith("/rest/v1/research_runs")
+    assert calls[0][2]["trade_count"] == 0
+    assert calls[0][2]["profit_factor"] is None
+    assert calls[0][2]["profit_factor_infinite"] is True
