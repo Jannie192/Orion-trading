@@ -34,19 +34,7 @@ def main() -> None:
 
     failures = []
     try:
-        for instrument in args.instruments:
-            for timeframe in args.timeframes:
-                try:
-                    result = manager.sync(instrument, timeframe, start, end)
-                    print(
-                        f"READY {instrument}/{timeframe} "
-                        f"rows={result.final_rows} gaps_filled={result.gaps_filled}"
-                    )
-                except Exception as exc:
-                    failures.append(f"{instrument}/{timeframe}: {exc}")
-                    print(f"FAILED {instrument}/{timeframe}: {exc}")
-
-        if args.run_experiments and not failures:
+        if args.run_experiments:
             experimenter = StrategyExperimenter(max_variants=18)
             experiment_grids = {
                 "*": {
@@ -56,15 +44,35 @@ def main() -> None:
             }
             cycle = ResearchCycle(
                 manager,
+                result_store=store,
                 experimenter=experimenter,
                 experiment_store=store,
                 experiment_grids=experiment_grids,
             )
-            for result in cycle.run(args.instruments, args.timeframes, start, end):
-                print(
-                    f"RESEARCH {result.instrument}/{result.timeframe} "
-                    f"baseline_return={result.backtest.total_return_pct:.2f}%"
-                )
+            try:
+                results = cycle.run(args.instruments, args.timeframes, start, end)
+                for result in results:
+                    print(
+                        f"RESEARCH {result.instrument}/{result.timeframe} "
+                        f"rows={result.data_rows} "
+                        f"baseline_return={result.backtest.total_return_pct:.2f}% "
+                        f"trades={len(result.backtest.trades)}"
+                    )
+            except Exception as exc:
+                failures.append(f"research cycle: {exc}")
+                print(f"FAILED research cycle: {exc}")
+        else:
+            for instrument in args.instruments:
+                for timeframe in args.timeframes:
+                    try:
+                        result = manager.sync(instrument, timeframe, start, end)
+                        print(
+                            f"READY {instrument}/{timeframe} "
+                            f"rows={result.final_rows} gaps_filled={result.gaps_filled}"
+                        )
+                    except Exception as exc:
+                        failures.append(f"{instrument}/{timeframe}: {exc}")
+                        print(f"FAILED {instrument}/{timeframe}: {exc}")
     finally:
         close = getattr(provider, "close", None)
         if close:
