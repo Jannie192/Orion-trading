@@ -87,11 +87,11 @@ def _research_bootstrap():
         from orion_trading.research_cycle import ResearchCycle
         from orion_trading.strategy_experiments import StrategyExperimenter
         from orion_trading.supabase_market_store import SupabaseMarketDataStore
-        from orion_trading.twelve_data_provider import TwelveDataFXProvider
+        from orion_trading.twelve_data_provider import BiquoteFXProvider
 
-        provider = TwelveDataFXProvider()
+        provider = BiquoteFXProvider()
         store = SupabaseMarketDataStore()
-        manager = DatasetManager(store, provider, "twelvedata", fetch_limit=10000)
+        manager = DatasetManager(store, provider, "biquote", fetch_limit=10000)
         cycle = ResearchCycle(
             manager,
             result_store=store,
