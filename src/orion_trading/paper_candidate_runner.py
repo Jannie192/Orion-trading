@@ -8,6 +8,7 @@ import pandas as pd
 from .supabase_market_store import SupabaseMarketDataStore
 from .supabase_paper_store import SupabasePaperStore
 from .supabase_strategy_store import SupabaseStrategyStore
+from .execution import OrderRequest, OrderResult
 from .trading_engine import TradingEngine, TradingEngineConfig
 
 
@@ -20,6 +21,38 @@ class CandidateRunResult:
     submitted_orders: int
     skipped_duplicates: int
     plans: int
+
+
+class PersistentPaperExecution:
+    """Execution adapter that writes approved orders to the persistent paper ledger."""
+
+    def __init__(self, paper_store: SupabasePaperStore, timeframe: str) -> None:
+        self.paper_store = paper_store
+        self.timeframe = timeframe
+
+    def submit(self, order: OrderRequest) -> OrderResult:
+        if order.units <= 0:
+            return OrderResult(False, None, "INVALID_UNITS")
+        if order.entry <= 0 or order.stop <= 0:
+            return OrderResult(False, None, "INVALID_PRICE")
+        if order.direction.value == "LONG" and order.stop >= order.entry:
+            return OrderResult(False, None, "INVALID_LONG_STOP")
+        if order.direction.value == "SHORT" and order.stop <= order.entry:
+            return OrderResult(False, None, "INVALID_SHORT_STOP")
+        if self.paper_store.has_order(order.client_order_id):
+            return OrderResult(False, order.client_order_id, "DUPLICATE_ORDER")
+        self.paper_store.create_order({
+            "order_id": order.client_order_id,
+            "instrument": order.instrument,
+            "timeframe": self.timeframe,
+            "direction": "long" if order.direction.value == "LONG" else "short",
+            "units": order.units,
+            "entry": order.entry,
+            "stop": order.stop,
+            "target": order.target,
+            "detected_at": order.created_at.isoformat(),
+        })
+        return OrderResult(True, order.client_order_id, "ACCEPTED")
 
 
 class PaperCandidateRunner:
@@ -61,31 +94,18 @@ class PaperCandidateRunner:
             frame.index[-1].to_pydatetime(),
         )
         equity = float(self.paper_store.snapshot()["account"]["equity"])
-        evaluation = engine.evaluate(frame, instrument=instrument, equity=equity)
+        execution = PersistentPaperExecution(self.paper_store, timeframe)
+        evaluation = engine.evaluate(frame, instrument=instrument, equity=equity, execution=execution)
 
         submitted = 0
         duplicates = 0
         for plan in evaluation.plans:
             if plan.order is None or not plan.risk.approved:
                 continue
-            order = {
-                "order_id": plan.order.client_order_id,
-                "instrument": instrument,
-                "timeframe": timeframe,
-                "direction": "long" if plan.order.direction.value == "LONG" else "short",
-                "units": plan.order.units,
-                "entry": plan.order.entry,
-                "stop": plan.order.stop,
-                "target": plan.order.target,
-                "regime": plan.candidate.regime.value,
-                "signal_type": ",".join(x.value for x in plan.candidate.opportunities),
-                "detected_at": plan.order.created_at.isoformat(),
-            }
-            if self.paper_store.has_order(order["order_id"]):
+            if plan.order.accepted:
+                submitted += 1
+            elif plan.order.reason == "DUPLICATE_ORDER":
                 duplicates += 1
-                continue
-            self.paper_store.create_order(order)
-            submitted += 1
 
         return CandidateRunResult(
             str(candidate["strategy_id"]), instrument, timeframe,
