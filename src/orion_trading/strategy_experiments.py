@@ -99,7 +99,7 @@ class StrategyExperimenter:
                 item.score,
                 item.result.total_return_pct,
                 -item.result.max_drawdown_pct,
-                item.result.trade_count if hasattr(item.result, "trade_count") else len(item.result.trades),
+                len(item.result.trades),
             ),
             reverse=True,
         )
@@ -118,7 +118,7 @@ class StrategyExperimenter:
             instrument=instrument,
             timeframe=timeframe.upper(),
             variants=ranked,
-            best=ranked[0] if ranked else None,
+            best=ranked[0] if ranked and ranked[0].score != float("-inf") else None,
         )
 
     @staticmethod
