@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import os
 from typing import Iterable
 
@@ -138,6 +139,56 @@ class SupabaseMarketDataStore:
         frame["ts"] = pd.to_datetime(frame["ts"], utc=True)
         frame = frame.set_index("ts").sort_index()
         return frame[["open", "high", "low", "close", "volume"]].astype(float)
+
+    def record_research_result(
+        self,
+        *,
+        strategy_name: str,
+        strategy_version: str,
+        result,
+        start_at: str,
+        end_at: str,
+    ) -> str:
+        """Persist a research/backtest summary and return its database run ID."""
+        endpoint = f"{self.url}/rest/v1/research_runs"
+        backtest = result.backtest
+        profit_factor_infinite = math.isinf(backtest.profit_factor)
+        payload = {
+            "strategy_name": strategy_name,
+            "strategy_version": strategy_version,
+            "instrument": result.instrument,
+            "timeframe": result.timeframe.upper(),
+            "start_at": start_at,
+            "end_at": end_at,
+            "data_rows": result.data_rows,
+            "data_downloaded": result.data_downloaded,
+            "gaps_filled": result.gaps_filled,
+            "initial_equity": backtest.initial_equity,
+            "final_equity": backtest.final_equity,
+            "total_return_pct": backtest.total_return_pct,
+            "max_drawdown_pct": backtest.max_drawdown_pct,
+            "trade_count": len(backtest.trades),
+            "wins": backtest.wins,
+            "losses": backtest.losses,
+            "win_rate_pct": backtest.win_rate_pct,
+            "profit_factor": None if profit_factor_infinite else backtest.profit_factor,
+            "profit_factor_infinite": profit_factor_infinite,
+        }
+        response = requests.post(
+            endpoint,
+            headers={**self._headers, "Prefer": "return=representation"},
+            json=payload,
+            timeout=self.timeout,
+        )
+        if not response.ok:
+            raise RuntimeError(
+                f"Supabase research result record failed ({response.status_code}): "
+                f"{response.text[:500]}"
+            )
+        rows = response.json()
+        if not rows or not rows[0].get("run_id"):
+            raise RuntimeError("Supabase research result did not return run_id")
+        return str(rows[0]["run_id"])
 
     def record_dataset(
         self,
