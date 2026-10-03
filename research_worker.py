@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import threading
+import time
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
@@ -24,10 +25,52 @@ SPEC.loader.exec_module(MODULE)
 HOST = "0.0.0.0"
 PORT = int(os.getenv("PORT", "8080"))
 MAX_BODY = 64 * 1024
+PAPER_INTERVAL_SECONDS = int(os.getenv("ORION_PAPER_INTERVAL_SECONDS", "900"))
 
 
 def _now():
     return datetime.now(timezone.utc).isoformat()
+
+
+def _paper_cycle():
+    """Continuously evaluate approved paper candidates when server credentials are configured."""
+    try:
+        from orion_trading.paper_candidate_runner import PaperCandidateRunner
+        from orion_trading.paper_performance import PaperPerformanceEngine
+        from orion_trading.supabase_market_store import SupabaseMarketDataStore
+        from orion_trading.supabase_paper_store import SupabasePaperStore
+        from orion_trading.supabase_strategy_store import SupabaseStrategyStore
+
+        market = SupabaseMarketDataStore()
+        paper = SupabasePaperStore()
+        strategies = SupabaseStrategyStore()
+        runner = PaperCandidateRunner(market, paper, strategies)
+        performance = PaperPerformanceEngine(paper, strategies)
+    except Exception as exc:
+        print(f"Paper cycle disabled: {exc}", flush=True)
+        return
+
+    while True:
+        try:
+            candidates = runner.candidates()
+            for candidate in candidates:
+                result = runner.run_candidate(candidate)
+                print(
+                    f"Paper candidate {result.strategy_id} "
+                    f"{result.instrument}/{result.timeframe}: "
+                    f"submitted={result.submitted_orders} closed={result.closed_trades}",
+                    flush=True,
+                )
+                report = performance.evaluate_and_promote(candidate)
+                print(
+                    f"Paper performance {result.strategy_id}: "
+                    f"trades={report.trades} expectancy_r={report.expectancy_r:.3f} "
+                    f"eligible={report.eligible}",
+                    flush=True,
+                )
+        except Exception as exc:
+            print(f"Paper cycle error: {exc}", flush=True)
+        time.sleep(PAPER_INTERVAL_SECONDS)
 
 
 def _json_response(handler, status, payload):
@@ -209,4 +252,5 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     print(f"ORION research worker listening on {HOST}:{PORT}", flush=True)
     threading.Thread(target=_poll_queue, daemon=True).start()
+    threading.Thread(target=_paper_cycle, daemon=True).start()
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
