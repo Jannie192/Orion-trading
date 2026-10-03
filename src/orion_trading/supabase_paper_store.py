@@ -79,6 +79,10 @@ class SupabasePaperStore:
             "signal_type": order.get("signal_type"),
             "detected_at": order["detected_at"],
             "status": "open",
+            "strategy_id": order.get("strategy_id"),
+            "strategy_name": order.get("strategy_name"),
+            "strategy_version": order.get("strategy_version"),
+            "source_experiment_id": order.get("source_experiment_id"),
         }
         rows = self._request(
             "POST",
@@ -127,6 +131,10 @@ class SupabasePaperStore:
                 "closed_at": at.isoformat(),
                 "regime": order.get("regime"),
                 "signal_type": order.get("signal_type"),
+                "strategy_id": order.get("strategy_id"),
+                "strategy_name": order.get("strategy_name"),
+                "strategy_version": order.get("strategy_version"),
+                "source_experiment_id": order.get("source_experiment_id"),
             }
             self._request("POST", "paper_trades", json=trade,
                 headers={**self._headers, "Prefer": "return=representation"})
@@ -148,6 +156,32 @@ class SupabasePaperStore:
         gross_profit = sum(float(t["pnl"]) for t in trades if float(t["pnl"]) > 0)
         gross_loss = abs(sum(float(t["pnl"]) for t in trades if float(t["pnl"]) < 0))
         profit_factor = gross_profit / gross_loss if gross_loss else None
+        r_values = [
+            float(t["pnl"]) / float(t["risk_amount"])
+            for t in trades
+            if float(t.get("risk_amount") or 0) > 0
+        ]
+        average_r = sum(r_values) / len(r_values) if r_values else 0.0
+        expectancy_r = average_r
+        equity_curve = [initial]
+        for trade in reversed(trades):
+            equity_curve.append(equity_curve[-1] + float(trade["pnl"]))
+        peak = equity_curve[0]
+        max_dd = 0.0
+        for value in equity_curve:
+            peak = max(peak, value)
+            if peak > peak:
+                peak = value
+            if peak > 0:
+                max_dd = max(max_dd, (peak - value) / peak * 100)
+        max_losses = 0
+        current_losses = 0
+        for trade in reversed(trades):
+            if float(trade["pnl"]) < 0:
+                current_losses += 1
+                max_losses = max(max_losses, current_losses)
+            else:
+                current_losses = 0
         return {
             "mode": "paper",
             "live_trading_enabled": False,
@@ -169,10 +203,10 @@ class SupabasePaperStore:
                 "gross_profit": gross_profit,
                 "gross_loss": gross_loss,
                 "profit_factor": profit_factor,
-                "expectancy_r": 0.0,
-                "average_r": 0.0,
-                "max_consecutive_losses": 0,
-                "max_drawdown_pct": 0.0,
+                "expectancy_r": expectancy_r,
+                "average_r": average_r,
+                "max_consecutive_losses": max_losses,
+                "max_drawdown_pct": max_dd,
             },
             "open_positions": orders,
         }
