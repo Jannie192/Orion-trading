@@ -5,6 +5,7 @@ from typing import Any
 
 class Regime(str, Enum):
     TREND_UP = "TREND_UP"
+    TRENDING = "TREND_UP"  # Backward-compatible alias for older callers/tests.
     TREND_DOWN = "TREND_DOWN"
     RANGE = "RANGE"
     COMPRESSION = "COMPRESSION"
