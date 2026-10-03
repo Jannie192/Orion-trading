@@ -55,3 +55,46 @@ def test_store_normalises_candles_and_batches(monkeypatch):
     assert all(row["instrument"] == "EUR_USD" for _, batch in calls for row in batch)
     assert calls[0][1][0]["timeframe"] == "M15"
     assert calls[0][1][0]["provider"] == "dukascopy"
+
+
+def test_store_loads_persisted_candles(monkeypatch):
+    store = SupabaseMarketDataStore(
+        url="https://example.supabase.co",
+        service_role_key="test-key",
+    )
+    calls = []
+
+    def fake_get(endpoint, headers, params, timeout):
+        calls.append((endpoint, params))
+        class Response:
+            ok = True
+            status_code = 200
+            text = ""
+            def json(self):
+                return [
+                    {
+                        "ts": "2026-01-01T00:15:00+00:00",
+                        "open": "2",
+                        "high": "3",
+                        "low": "1",
+                        "close": "2.5",
+                        "volume": "11",
+                    }
+                ]
+        return Response()
+
+    monkeypatch.setattr(
+        "orion_trading.supabase_market_store.requests.get",
+        fake_get,
+    )
+
+    frame = store.load(
+        "EUR_USD",
+        "M15",
+        "2026-01-01T00:00:00+00:00",
+        "2026-01-01T01:00:00+00:00",
+    )
+    assert len(frame) == 1
+    assert str(frame.index.tz) == "UTC"
+    assert frame.iloc[0]["close"] == 2.5
+    assert calls[0][1]["and"] == "(ts.gte.2026-01-01T00:00:00+00:00,ts.lt.2026-01-01T01:00:00+00:00)"
