@@ -1,7 +1,9 @@
 import pandas as pd
 import pytest
+from datetime import datetime, timezone
 
-from orion_trading.backtest import BacktestResult
+from orion_trading.backtest import BacktestResult, BacktestTrade
+from orion_trading.models import Direction
 from orion_trading.strategy_experiments import (
     StrategyExperimentResult,
     StrategyExperimenter,
@@ -15,7 +17,7 @@ def _result(return_pct=10.0, drawdown=5.0, trades=20):
         final_equity=10_000 * (1 + return_pct / 100),
         total_return_pct=return_pct,
         max_drawdown_pct=drawdown,
-        trades=tuple(),
+        trades=(BacktestTrade("TEST", Direction.LONG, datetime.now(timezone.utc), datetime.now(timezone.utc), 1, 2, 1, return_pct, "TARGET"),) * trades,
         wins=trades,
         losses=0,
         win_rate_pct=100.0 if trades else 0.0,
