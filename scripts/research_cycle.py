@@ -5,6 +5,8 @@ from datetime import datetime, timezone, timedelta
 import os
 
 from orion_trading.dataset_manager import DatasetManager
+from orion_trading.research_cycle import ResearchCycle
+from orion_trading.strategy_experiments import StrategyExperimenter
 from orion_trading.provider_factory import provider_from_env
 from orion_trading.supabase_market_store import SupabaseMarketDataStore
 
@@ -20,6 +22,7 @@ def main() -> None:
     parser.add_argument("--instruments", nargs="+", default=list(DEFAULT_INSTRUMENTS))
     parser.add_argument("--timeframes", nargs="+", default=list(DEFAULT_TIMEFRAMES))
     parser.add_argument("--lookback-days", type=int, default=365)
+    parser.add_argument("--run-experiments", action="store_true", help="Run controlled strategy parameter experiments after data sync.")
     args = parser.parse_args()
 
     end = datetime.now(timezone.utc)
@@ -42,6 +45,26 @@ def main() -> None:
                 except Exception as exc:
                     failures.append(f"{instrument}/{timeframe}: {exc}")
                     print(f"FAILED {instrument}/{timeframe}: {exc}")
+
+        if args.run_experiments and not failures:
+            experimenter = StrategyExperimenter(max_variants=18)
+            experiment_grids = {
+                "*": {
+                    "atr_stop_multiple": (1.0, 1.5, 2.0),
+                    "reward_multiple": (1.5, 2.0, 3.0),
+                }
+            }
+            cycle = ResearchCycle(
+                manager,
+                experimenter=experimenter,
+                experiment_store=store,
+                experiment_grids=experiment_grids,
+            )
+            for result in cycle.run(args.instruments, args.timeframes, start, end):
+                print(
+                    f"RESEARCH {result.instrument}/{result.timeframe} "
+                    f"baseline_return={result.backtest.total_return_pct:.2f}%"
+                )
     finally:
         close = getattr(provider, "close", None)
         if close:
