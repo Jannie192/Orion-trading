@@ -19,11 +19,18 @@ class ResearchResult:
     gaps_filled: int
     backtest: BacktestResult
     run_id: str | None = None
+    approval_status: str | None = None
+    paper_candidate_id: str | None = None
 
 
 class ResearchExperimentStore(Protocol):
     def record_strategy_experiment(
         self, *, experiment: StrategyExperimentResult, days: int = 0, validation: dict | None = None
+    ) -> str: ...
+
+    def promote_paper_candidate(
+        self, *, experiment: StrategyExperimentResult, experiment_id: str,
+        validation: dict, days: int = 0
     ) -> str: ...
 
 
@@ -114,12 +121,33 @@ class ResearchCycle:
                             end=sync.requested_end,
                             config=self.validation_config,
                         )
+                        experiment_id = None
+                        paper_candidate_id = None
+                        approval_status = (validation.get("approval") or {}).get("status")
                         if self.experiment_store is not None:
-                            self.experiment_store.record_strategy_experiment(
+                            experiment_id = self.experiment_store.record_strategy_experiment(
                                 experiment=experiment,
                                 days=max((sync.requested_end - sync.requested_start).days, 0),
                                 validation=validation,
                             )
+                            if approval_status == "PASS":
+                                paper_candidate_id = self.experiment_store.promote_paper_candidate(
+                                    experiment=experiment,
+                                    experiment_id=experiment_id,
+                                    validation=validation,
+                                    days=max((sync.requested_end - sync.requested_start).days, 0),
+                                )
+                        result = ResearchResult(
+                            instrument=result.instrument,
+                            timeframe=result.timeframe,
+                            data_rows=result.data_rows,
+                            data_downloaded=result.data_downloaded,
+                            gaps_filled=result.gaps_filled,
+                            backtest=result.backtest,
+                            run_id=result.run_id,
+                            approval_status=approval_status,
+                            paper_candidate_id=paper_candidate_id,
+                        )
 
                 if self.result_store is not None:
                     run_id = self.result_store.record_research_result(
@@ -137,6 +165,8 @@ class ResearchCycle:
                         gaps_filled=result.gaps_filled,
                         backtest=result.backtest,
                         run_id=run_id,
+                        approval_status=result.approval_status,
+                        paper_candidate_id=result.paper_candidate_id,
                     )
                 results.append(result)
         return tuple(results)
