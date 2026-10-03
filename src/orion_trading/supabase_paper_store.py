@@ -170,7 +170,6 @@ class SupabasePaperStore:
         max_dd = 0.0
         for value in equity_curve:
             peak = max(peak, value)
-            peak = max(peak, value)
             if peak > 0:
                 max_dd = max(max_dd, (peak - value) / peak * 100)
         max_losses = 0
