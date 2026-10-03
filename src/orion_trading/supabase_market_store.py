@@ -93,6 +93,50 @@ class SupabaseMarketDataStore:
         self._upsert_rows(rows)
         return len(rows)
 
+    def load(
+        self,
+        instrument: str,
+        timeframe: str,
+        start_at: str | None = None,
+        end_at: str | None = None,
+        limit: int = 10000,
+    ) -> pd.DataFrame:
+        """Load persisted candles from Supabase as a UTC-indexed OHLCV frame."""
+        if limit <= 0:
+            raise ValueError("limit must be positive")
+        params = {
+            "instrument": f"eq.{instrument}",
+            "timeframe": f"eq.{timeframe.upper()}",
+            "order": "ts.asc",
+            "limit": str(limit),
+        }
+        if start_at:
+            params["ts"] = f"gte.{start_at}"
+        if end_at:
+            params["ts"] = f"lt.{end_at}" if "ts" not in params else params["ts"]
+            if "ts" in params and start_at:
+                params.pop("ts")
+                params["ts"] = f"gte.{start_at}"
+                params["and"] = f"(ts.lt.{end_at})"
+        response = requests.get(
+            f"{self.url}/rest/v1/market_data_candles",
+            headers=self._headers,
+            params=params,
+            timeout=self.timeout,
+        )
+        if not response.ok:
+            raise RuntimeError(
+                f"Supabase candle query failed ({response.status_code}): "
+                f"{response.text[:500]}"
+            )
+        rows = response.json()
+        if not rows:
+            return pd.DataFrame(columns=["open", "high", "low", "close", "volume"], index=pd.DatetimeIndex([], tz="UTC"))
+        frame = pd.DataFrame(rows)
+        frame["ts"] = pd.to_datetime(frame["ts"], utc=True)
+        frame = frame.set_index("ts").sort_index()
+        return frame[["open", "high", "low", "close", "volume"]].astype(float)
+
     def record_dataset(
         self,
         *,
