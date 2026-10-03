@@ -171,3 +171,53 @@ def test_store_records_research_result_and_returns_run_id(monkeypatch):
     assert calls[0][2]["trade_count"] == 0
     assert calls[0][2]["profit_factor"] is None
     assert calls[0][2]["profit_factor_infinite"] is True
+
+
+def test_store_records_strategy_experiment_in_existing_schema(monkeypatch):
+    from orion_trading.strategy_experiments import StrategyExperimentResult
+
+    store = SupabaseMarketDataStore(
+        url="https://example.supabase.co",
+        service_role_key="test-key",
+    )
+    calls = []
+
+    def fake_get(endpoint, headers, params, timeout):
+        calls.append(("GET", endpoint, params))
+        class Response:
+            ok = True
+            status_code = 200
+            text = ""
+            def json(self):
+                return [{"strategy_id": "strategy-123"}]
+        return Response()
+
+    def fake_post(endpoint, headers, json, timeout):
+        calls.append(("POST", endpoint, json))
+        class Response:
+            ok = True
+            status_code = 201
+            text = ""
+            def json(self):
+                return [{"experiment_id": "experiment-123"}]
+        return Response()
+
+    monkeypatch.setattr("orion_trading.supabase_market_store.requests.get", fake_get)
+    monkeypatch.setattr("orion_trading.supabase_market_store.requests.post", fake_post)
+
+    experiment = StrategyExperimentResult(
+        strategy_name="ORION",
+        strategy_version="experiment",
+        instrument="EURUSD",
+        timeframe="H1",
+        variants=(),
+        best=None,
+    )
+    experiment_id = store.record_strategy_experiment(experiment=experiment, days=365)
+
+    assert experiment_id == "experiment-123"
+    assert calls[0][0] == "GET"
+    assert calls[1][0] == "POST"
+    assert calls[1][1].endswith("/rest/v1/strategy_experiments")
+    assert calls[1][2]["strategy_id"] == "strategy-123"
+    assert calls[1][2]["days"] == 365
