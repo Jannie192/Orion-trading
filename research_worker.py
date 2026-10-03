@@ -26,6 +26,11 @@ HOST = "0.0.0.0"
 PORT = int(os.getenv("PORT", "8080"))
 MAX_BODY = 64 * 1024
 PAPER_INTERVAL_SECONDS = int(os.getenv("ORION_PAPER_INTERVAL_SECONDS", "900"))
+RESEARCH_BOOTSTRAP = os.getenv("ORION_RESEARCH_BOOTSTRAP", "0").lower() in {"1", "true", "yes"}
+RESEARCH_DAYS = int(os.getenv("ORION_RESEARCH_DAYS", "365"))
+RESEARCH_TIMEFRAMES = tuple(x.strip().upper() for x in os.getenv("ORION_RESEARCH_TIMEFRAMES", "H1,H4,D1,M15").split(",") if x.strip())
+RESEARCH_INSTRUMENTS = tuple(x.strip().upper() for x in os.getenv("ORION_RESEARCH_INSTRUMENTS", "EURUSD,GBPUSD,USDJPY,USDCHF,AUDUSD,USDCAD,NZDUSD").split(",") if x.strip())
+RESEARCH_INTERVAL_SECONDS = int(os.getenv("ORION_RESEARCH_INTERVAL_SECONDS", "8"))
 
 
 def _now():
@@ -53,6 +58,7 @@ def _paper_cycle():
     while True:
         try:
             candidates = runner.candidates()
+            print(f"Paper cycle: candidates={len(candidates)}", flush=True)
             for candidate in candidates:
                 result = runner.run_candidate(candidate)
                 print(
@@ -71,6 +77,55 @@ def _paper_cycle():
         except Exception as exc:
             print(f"Paper cycle error: {exc}", flush=True)
         time.sleep(PAPER_INTERVAL_SECONDS)
+
+
+def _research_bootstrap():
+    if not RESEARCH_BOOTSTRAP:
+        return
+    try:
+        from orion_trading.dataset_manager import DatasetManager
+        from orion_trading.research_cycle import ResearchCycle
+        from orion_trading.strategy_experiments import StrategyExperimenter
+        from orion_trading.supabase_market_store import SupabaseMarketDataStore
+        from orion_trading.twelve_data_provider import TwelveDataFXProvider
+
+        provider = TwelveDataFXProvider()
+        store = SupabaseMarketDataStore()
+        manager = DatasetManager(store, provider, "twelvedata", fetch_limit=10000)
+        cycle = ResearchCycle(
+            manager,
+            result_store=store,
+            experimenter=StrategyExperimenter(max_variants=27),
+            experiment_store=store,
+            experiment_grids={"*": {
+                "risk_per_trade_pct": (0.25, 0.5, 0.75),
+                "atr_stop_multiple": (1.0, 1.5, 2.0),
+                "reward_multiple": (1.5, 2.0, 3.0),
+            }},
+        )
+        end = datetime.now(timezone.utc)
+        start = end - timedelta(days=RESEARCH_DAYS)
+        print(
+            f"Research bootstrap starting: instruments={len(RESEARCH_INSTRUMENTS)} "
+            f"timeframes={RESEARCH_TIMEFRAMES} days={RESEARCH_DAYS}",
+            flush=True,
+        )
+        for timeframe in RESEARCH_TIMEFRAMES:
+            for instrument in RESEARCH_INSTRUMENTS:
+                try:
+                    result = cycle.run((instrument,), (timeframe,), start, end)[0]
+                    print(
+                        f"Research complete {instrument}/{timeframe}: "
+                        f"rows={result.data_rows} downloaded={result.data_downloaded} "
+                        f"approval={result.approval_status} candidate={result.paper_candidate_id}",
+                        flush=True,
+                    )
+                except Exception as exc:
+                    print(f"Research failed {instrument}/{timeframe}: {exc}", flush=True)
+                time.sleep(RESEARCH_INTERVAL_SECONDS)
+        print("Research bootstrap finished", flush=True)
+    except Exception as exc:
+        print(f"Research bootstrap disabled/failed: {exc}", flush=True)
 
 
 def _json_response(handler, status, payload):
@@ -211,6 +266,8 @@ class Handler(BaseHTTPRequestHandler):
                     "service": "orion-research-worker",
                     "live_trading_enabled": False,
                     "job_mode": "asynchronous",
+                    "paper_cycle_enabled": True,
+                    "research_bootstrap_enabled": RESEARCH_BOOTSTRAP,
                 },
             )
         return _json_response(self, 404, {"error": "NOT_FOUND"})
@@ -253,4 +310,5 @@ if __name__ == "__main__":
     print(f"ORION research worker listening on {HOST}:{PORT}", flush=True)
     threading.Thread(target=_poll_queue, daemon=True).start()
     threading.Thread(target=_paper_cycle, daemon=True).start()
+    threading.Thread(target=_research_bootstrap, daemon=True).start()
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
