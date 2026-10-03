@@ -6,6 +6,7 @@ from typing import Iterable, Mapping, Protocol
 
 from .backtest import BacktestResult, Backtester
 from .dataset_manager import DatasetManager
+from .experiment_validation import ExperimentValidationConfig, validate_experiment
 from .strategy_experiments import StrategyExperimentResult, StrategyExperimenter
 
 
@@ -21,7 +22,9 @@ class ResearchResult:
 
 
 class ResearchExperimentStore(Protocol):
-    def record_strategy_experiment(self, *, experiment: StrategyExperimentResult, days: int = 0) -> str: ...
+    def record_strategy_experiment(
+        self, *, experiment: StrategyExperimentResult, days: int = 0, validation: dict | None = None
+    ) -> str: ...
 
 
 class ResearchResultStore(Protocol):
@@ -50,6 +53,7 @@ class ResearchCycle:
         experimenter: StrategyExperimenter | None = None,
         experiment_store: ResearchExperimentStore | None = None,
         experiment_grids: Mapping[str, Mapping[str, Iterable[float]]] | None = None,
+        validation_config: ExperimentValidationConfig | None = None,
     ) -> None:
         self.dataset_manager = dataset_manager
         self.backtester = backtester or Backtester()
@@ -59,6 +63,7 @@ class ResearchCycle:
         self.experimenter = experimenter
         self.experiment_store = experiment_store
         self.experiment_grids = experiment_grids or {}
+        self.validation_config = validation_config or ExperimentValidationConfig()
 
     def run(
         self,
@@ -102,10 +107,18 @@ class ResearchCycle:
                             strategy_name=self.strategy_name,
                             strategy_version=f"{self.strategy_version}-experiment",
                         )
+                        validation = validate_experiment(
+                            candles,
+                            experiment,
+                            start=sync.requested_start,
+                            end=sync.requested_end,
+                            config=self.validation_config,
+                        )
                         if self.experiment_store is not None:
                             self.experiment_store.record_strategy_experiment(
                                 experiment=experiment,
                                 days=max((sync.requested_end - sync.requested_start).days, 0),
+                                validation=validation,
                             )
 
                 if self.result_store is not None:
