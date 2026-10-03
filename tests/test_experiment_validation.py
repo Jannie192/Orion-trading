@@ -67,6 +67,7 @@ def test_validation_returns_walk_forward_and_monte_carlo(monkeypatch):
     )
 
     assert result["method"] == "experiment_candidate_rolling_walk_forward"
+    assert result["validated_candidate"]["rank"] == 1
     assert result["fold_count"] > 0
     assert result["monte_carlo"]["simulations"] == 100
     assert calls
