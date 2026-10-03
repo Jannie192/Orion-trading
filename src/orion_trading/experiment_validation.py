@@ -52,6 +52,7 @@ def validate_experiment(
 
     fold_reports: list[dict] = []
     oos_results: list[tuple[BacktestResult, float]] = []
+    selected_ranks: list[int] = []
 
     for fold_number, (train, test) in enumerate(folds, start=1):
         scored: list[tuple[object, BacktestResult]] = []
@@ -83,6 +84,7 @@ def validate_experiment(
                 risk_per_trade_pct=best_candidate.parameters.get("risk_per_trade_pct", 0.50),
             ),
         ).run(test_frame, instrument=experiment.instrument)
+        selected_ranks.append(best_candidate.rank)
         oos_results.append((test_result, best_candidate.parameters.get("risk_per_trade_pct", 0.50)))
         fold_reports.append(
             {
@@ -134,12 +136,28 @@ def validate_experiment(
         {"fold_count": len(fold_reports), "oos_trade_count": len(pnl), "monte_carlo": mc_payload}
     )
 
+    validated_candidate = None
+    if selected_ranks and candidates:
+        selected_rank = max(
+            sorted(set(selected_ranks)),
+            key=lambda rank: (selected_ranks.count(rank), -rank),
+        )
+        selected = next((candidate for candidate in candidates if candidate.rank == selected_rank), None)
+        if selected is not None:
+            validated_candidate = {
+                "rank": selected.rank,
+                "parameters": selected.parameters,
+                "selection_count": selected_ranks.count(selected.rank),
+                "selection_rate_pct": selected_ranks.count(selected.rank) / len(selected_ranks) * 100.0,
+            }
+
     return {
         "method": "experiment_candidate_rolling_walk_forward",
         "candidate_count": len(candidates),
         "fold_count": len(fold_reports),
         "folds": fold_reports,
         "oos_trade_count": len(pnl),
+        "validated_candidate": validated_candidate,
         "approval": approval,
         "monte_carlo": {
             "simulations": mc.simulations,
