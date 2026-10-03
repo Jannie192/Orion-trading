@@ -231,3 +231,69 @@ def test_store_records_strategy_experiment_in_existing_schema(monkeypatch):
     assert "variants" not in calls[1][2]
     assert "best" not in calls[1][2]
     assert calls[1][2]["results"]["validation"]["fold_count"] == 2
+
+
+def test_store_promotes_approved_candidate(monkeypatch):
+    from orion_trading.strategy_experiments import StrategyExperimentResult
+
+    store = SupabaseMarketDataStore(
+        url="https://example.supabase.co",
+        service_role_key="test-key",
+    )
+    calls = []
+
+    def fake_get(endpoint, headers, params, timeout):
+        calls.append(("GET", endpoint, params))
+        class Response:
+            ok = True
+            status_code = 200
+            text = ""
+            def json(self):
+                return [{"strategy_id": "strategy-123"}]
+        return Response()
+
+    def fake_patch(endpoint, headers, json, timeout):
+        calls.append(("PATCH", endpoint, json))
+        class Response:
+            ok = True
+            status_code = 200
+            text = ""
+            def json(self):
+                return [{"strategy_id": "strategy-123"}]
+        return Response()
+
+    monkeypatch.setattr("orion_trading.supabase_market_store.requests.get", fake_get)
+    monkeypatch.setattr("orion_trading.supabase_market_store.requests.patch", fake_patch)
+
+    experiment = StrategyExperimentResult(
+        strategy_name="ORION",
+        strategy_version="experiment",
+        instrument="EURUSD",
+        timeframe="H1",
+        variants=(),
+        best=None,
+    )
+    validation = {
+        "approval": {"status": "PASS"},
+        "validated_candidate": {
+            "rank": 2,
+            "parameters": {
+                "atr_stop_multiple": 1.5,
+                "reward_multiple": 2.0,
+                "risk_per_trade_pct": 0.5,
+            },
+        },
+    }
+
+    candidate_id = store.promote_paper_candidate(
+        experiment=experiment,
+        experiment_id="experiment-123",
+        validation=validation,
+        days=365,
+    )
+
+    assert candidate_id == "strategy-123"
+    assert calls[1][0] == "PATCH"
+    assert calls[1][2]["status"] == "PAPER_CANDIDATE"
+    assert calls[1][2]["candidate_parameters"]["reward_multiple"] == 2.0
+    assert calls[1][2]["source_experiment_id"] == "experiment-123"
