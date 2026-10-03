@@ -123,6 +123,16 @@ def validate_experiment(
         simulations=cfg.monte_carlo_simulations,
         seed=cfg.monte_carlo_seed,
     )
+    mc_payload = {
+        "median_net_r": mc.median_net_r,
+        "p05_net_r": mc.p05_net_r,
+        "p95_max_drawdown_r": mc.p95_max_drawdown_r,
+        "p95_max_losing_streak": mc.p95_max_losing_streak,
+        "negative_finish_pct": mc.negative_finish_pct,
+    }
+    approval = approve_validation(
+        {"fold_count": len(fold_reports), "oos_trade_count": len(pnl), "monte_carlo": mc_payload}
+    )
 
     return {
         "method": "experiment_candidate_rolling_walk_forward",
@@ -130,6 +140,7 @@ def validate_experiment(
         "fold_count": len(fold_reports),
         "folds": fold_reports,
         "oos_trade_count": len(pnl),
+        "approval": approval,
         "monte_carlo": {
             "simulations": mc.simulations,
             "trades": mc.trades,
