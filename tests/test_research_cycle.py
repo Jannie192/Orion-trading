@@ -134,3 +134,5 @@ def test_research_cycle_runs_and_persists_experiments_when_configured():
     assert experimenter.calls[0][1]["parameter_grid"]["atr_stop_multiple"] == [1.0, 1.5]
     assert len(experiment_store.calls) == 1
     assert experiment_store.calls[0]["experiment"].instrument == "EURUSD"
+    assert "validation" in experiment_store.calls[0]
+    assert experiment_store.calls[0]["validation"]["method"] == "experiment_candidate_rolling_walk_forward"
