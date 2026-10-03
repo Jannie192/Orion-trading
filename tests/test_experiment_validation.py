@@ -70,3 +70,43 @@ def test_validation_returns_walk_forward_and_monte_carlo(monkeypatch):
     assert result["fold_count"] > 0
     assert result["monte_carlo"]["simulations"] == 100
     assert calls
+
+
+def test_approval_gate_passes_only_when_all_thresholds_are_met():
+    from orion_trading.experiment_validation import CandidateApprovalConfig, approve_validation
+
+    validation = {
+        "fold_count": 4,
+        "oos_trade_count": 50,
+        "monte_carlo": {
+            "median_net_r": 3.0,
+            "p05_net_r": 0.5,
+            "negative_finish_pct": 30.0,
+            "p95_max_drawdown_r": 8.0,
+            "p95_max_losing_streak": 7,
+        },
+    }
+    result = approve_validation(validation)
+    assert result["status"] == "PASS"
+    assert result["next_stage"] == "PAPER_TRADING_CANDIDATE"
+    assert all(result["checks"].values())
+
+
+def test_approval_gate_rejects_insufficient_oos_evidence():
+    from orion_trading.experiment_validation import approve_validation
+
+    result = approve_validation(
+        {
+            "fold_count": 2,
+            "oos_trade_count": 12,
+            "monte_carlo": {
+                "median_net_r": 4.0,
+                "p05_net_r": 1.0,
+                "negative_finish_pct": 20.0,
+                "p95_max_drawdown_r": 5.0,
+                "p95_max_losing_streak": 4,
+            },
+        }
+    )
+    assert result["status"] == "FAIL"
+    assert result["next_stage"] == "RESEARCH"
