@@ -1,10 +1,8 @@
 from datetime import datetime, timezone
 
-import pandas as pd
-
 from orion_trading.backtest import BacktestResult
 from orion_trading.dataset_manager import SyncResult
-from orion_trading.research_cycle import ResearchCycle
+from orion_trading.research_cycle import ResearchCycle, ResearchResult
 
 
 class FakeStore:
@@ -29,6 +27,15 @@ class FakeBacktester:
         return BacktestResult(10000, 10200, 2.0, 1.0, (), 0, 0, 0.0, 0.0)
 
 
+class FakeResultStore:
+    def __init__(self):
+        self.calls = []
+
+    def record_research_result(self, **kwargs):
+        self.calls.append(kwargs)
+        return "run-123"
+
+
 def test_research_cycle_syncs_data_then_backtests_from_store():
     start = datetime(2026, 1, 1, tzinfo=timezone.utc)
     end = datetime(2026, 2, 1, tzinfo=timezone.utc)
@@ -46,3 +53,24 @@ def test_research_cycle_syncs_data_then_backtests_from_store():
     assert backtester.calls[0][0] is FakeManager.store
     assert backtester.calls[0][1]["start_at"].endswith("+00:00")
     assert backtester.calls[0][1]["end_at"].endswith("+00:00")
+
+
+def test_research_cycle_persists_result_and_returns_run_id():
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    end = datetime(2026, 2, 1, tzinfo=timezone.utc)
+    result_store = FakeResultStore()
+
+    results = ResearchCycle(
+        FakeManager(),
+        FakeBacktester(),
+        result_store=result_store,
+        strategy_name="ORION",
+        strategy_version="1.0",
+    ).run(["EURUSD"], ["H1"], start, end)
+
+    assert results[0].run_id == "run-123"
+    assert len(result_store.calls) == 1
+    assert result_store.calls[0]["strategy_name"] == "ORION"
+    assert result_store.calls[0]["strategy_version"] == "1.0"
+    assert isinstance(result_store.calls[0]["result"], ResearchResult)
+    assert result_store.calls[0]["start_at"].endswith("+00:00")
