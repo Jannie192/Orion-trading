@@ -213,7 +213,11 @@ def test_store_records_strategy_experiment_in_existing_schema(monkeypatch):
         variants=(),
         best=None,
     )
-    experiment_id = store.record_strategy_experiment(experiment=experiment, days=365)
+    experiment_id = store.record_strategy_experiment(
+        experiment=experiment,
+        days=365,
+        validation={"method": "experiment_candidate_rolling_walk_forward", "fold_count": 2},
+    )
 
     assert experiment_id == "experiment-123"
     assert calls[0][0] == "GET"
@@ -226,3 +230,4 @@ def test_store_records_strategy_experiment_in_existing_schema(monkeypatch):
     assert calls[1][2]["grid"] == {}
     assert "variants" not in calls[1][2]
     assert "best" not in calls[1][2]
+    assert calls[1][2]["results"]["validation"]["fold_count"] == 2
