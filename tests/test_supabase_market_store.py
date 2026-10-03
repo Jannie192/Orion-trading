@@ -221,3 +221,8 @@ def test_store_records_strategy_experiment_in_existing_schema(monkeypatch):
     assert calls[1][1].endswith("/rest/v1/strategy_experiments")
     assert calls[1][2]["strategy_id"] == "strategy-123"
     assert calls[1][2]["days"] == 365
+    assert calls[1][2]["strategy_name"] == "ORION"
+    assert calls[1][2]["results"]["variant_count"] == 0
+    assert calls[1][2]["grid"] == {}
+    assert "variants" not in calls[1][2]
+    assert "best" not in calls[1][2]
