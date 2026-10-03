@@ -88,6 +88,54 @@ class SupabasePaperStore:
         )
         return rows[0]
 
+    def mark_bar(self, instrument: str, high: float, low: float, close: float, at: datetime) -> list[dict[str, Any]]:
+        """Close persistent paper orders when their stop or target is touched."""
+        closed: list[dict[str, Any]] = []
+        for order in self.open_orders():
+            if order.get("instrument") != instrument:
+                continue
+            direction = order["direction"]
+            exit_price = None
+            reason = None
+            if direction == "long":
+                if low <= float(order["stop"]):
+                    exit_price, reason = float(order["stop"]), "stop"
+                elif high >= float(order["target"]):
+                    exit_price, reason = float(order["target"]), "target"
+            else:
+                if high >= float(order["stop"]):
+                    exit_price, reason = float(order["stop"]), "stop"
+                elif low <= float(order["target"]):
+                    exit_price, reason = float(order["target"]), "target"
+            if reason is None:
+                continue
+            pnl = (exit_price - float(order["entry"])) * float(order["units"])
+            if direction == "short":
+                pnl = -pnl
+            trade = {
+                "order_id": order["order_id"],
+                "account_id": self.account_id,
+                "instrument": instrument,
+                "direction": direction,
+                "units": order["units"],
+                "entry": order["entry"],
+                "exit": exit_price,
+                "pnl": pnl,
+                "risk_amount": abs(float(order["entry"]) - float(order["stop"])) * float(order["units"]),
+                "reason": reason,
+                "opened_at": order["detected_at"],
+                "closed_at": at.isoformat(),
+                "regime": order.get("regime"),
+                "signal_type": order.get("signal_type"),
+            }
+            self._request("POST", "paper_trades", json=trade,
+                headers={**self._headers, "Prefer": "return=representation"})
+            self._request("PATCH", f"paper_orders?order_id=eq.{order['order_id']}",
+                json={"status": "closed"},
+                headers={**self._headers, "Prefer": "return=representation"})
+            closed.append(trade)
+        return closed
+
     def snapshot(self) -> dict[str, Any]:
         account = self.account()
         orders = self.open_orders()
