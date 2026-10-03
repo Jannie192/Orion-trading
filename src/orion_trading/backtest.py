@@ -50,6 +50,26 @@ class Backtester:
             config=TradingEngineConfig(risk_per_trade_pct=self.config.risk_per_trade_pct)
         )
 
+    def run_from_store(
+        self,
+        store,
+        *,
+        instrument: str,
+        timeframe: str,
+        start_at: str | None = None,
+        end_at: str | None = None,
+        limit: int = 10000,
+    ) -> BacktestResult:
+        """Backtest exclusively from candles persisted in a market-data store."""
+        candles = store.load(
+            instrument,
+            timeframe,
+            start_at=start_at,
+            end_at=end_at,
+            limit=limit,
+        )
+        return self.run(candles, instrument=instrument)
+
     def run(self, candles: pd.DataFrame, *, instrument: str) -> BacktestResult:
         if candles.empty or len(candles) < 61:
             return self._result(self.config.initial_equity, ())
