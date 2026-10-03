@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Iterable, Protocol
+from typing import Iterable, Mapping, Protocol
 
 from .backtest import BacktestResult, Backtester
 from .dataset_manager import DatasetManager
+from .strategy_experiments import StrategyExperimentResult, StrategyExperimenter
 
 
 @dataclass(frozen=True)
@@ -17,6 +18,10 @@ class ResearchResult:
     gaps_filled: int
     backtest: BacktestResult
     run_id: str | None = None
+
+
+class ResearchExperimentStore(Protocol):
+    def record_strategy_experiment(self, *, experiment: StrategyExperimentResult, days: int = 0) -> str: ...
 
 
 class ResearchResultStore(Protocol):
@@ -42,12 +47,18 @@ class ResearchCycle:
         result_store: ResearchResultStore | None = None,
         strategy_name: str = "ORION",
         strategy_version: str = "1.0",
+        experimenter: StrategyExperimenter | None = None,
+        experiment_store: ResearchExperimentStore | None = None,
+        experiment_grids: Mapping[str, Mapping[str, Iterable[float]]] | None = None,
     ) -> None:
         self.dataset_manager = dataset_manager
         self.backtester = backtester or Backtester()
         self.result_store = result_store
         self.strategy_name = strategy_name
         self.strategy_version = strategy_version
+        self.experimenter = experimenter
+        self.experiment_store = experiment_store
+        self.experiment_grids = experiment_grids or {}
 
     def run(
         self,
@@ -77,6 +88,26 @@ class ResearchCycle:
                     gaps_filled=sync.gaps_filled,
                     backtest=backtest,
                 )
+                if self.experimenter is not None:
+                    grid = self.experiment_grids.get(instrument) or self.experiment_grids.get("*")
+                    if grid:
+                        candles = self.dataset_manager.store.load(
+                            instrument, timeframe, start_at=start_at, end_at=end_at
+                        )
+                        experiment = self.experimenter.run(
+                            candles,
+                            instrument=instrument,
+                            timeframe=timeframe,
+                            parameter_grid=grid,
+                            strategy_name=self.strategy_name,
+                            strategy_version=f"{self.strategy_version}-experiment",
+                        )
+                        if self.experiment_store is not None:
+                            self.experiment_store.record_strategy_experiment(
+                                experiment=experiment,
+                                days=max((sync.requested_end - sync.requested_start).days, 0),
+                            )
+
                 if self.result_store is not None:
                     run_id = self.result_store.record_research_result(
                         strategy_name=self.strategy_name,
