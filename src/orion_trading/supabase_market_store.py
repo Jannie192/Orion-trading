@@ -195,6 +195,7 @@ class SupabaseMarketDataStore:
         *,
         experiment,
         days: int = 0,
+        validation: dict | None = None,
     ) -> str:
         """Persist an experiment in the existing strategy research schema.
 
@@ -265,6 +266,8 @@ class SupabaseMarketDataStore:
 
         experiment_endpoint = f"{self.url}/rest/v1/strategy_experiments"
         serialised = serialise_experiment(experiment)
+        if validation is not None:
+            serialised["validation"] = validation
         grid = {
             key: sorted({
                 variant.parameters[key]
