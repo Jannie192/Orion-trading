@@ -98,3 +98,33 @@ def test_store_loads_persisted_candles(monkeypatch):
     assert str(frame.index.tz) == "UTC"
     assert frame.iloc[0]["close"] == 2.5
     assert calls[0][1]["and"] == "(ts.gte.2026-01-01T00:00:00+00:00,ts.lt.2026-01-01T01:00:00+00:00)"
+
+
+def test_backtester_can_run_from_store(monkeypatch):
+    from orion_trading.backtest import Backtester
+
+    idx = pd.date_range("2026-01-01", periods=61, freq="h", tz="UTC")
+    frame = pd.DataFrame(
+        {"open": 1.0, "high": 1.01, "low": 0.99, "close": 1.0, "volume": 1.0},
+        index=idx,
+    )
+
+    class FakeStore:
+        def __init__(self):
+            self.called = None
+        def load(self, instrument, timeframe, **kwargs):
+            self.called = (instrument, timeframe, kwargs)
+            return frame
+
+    store = FakeStore()
+    result = Backtester().run_from_store(
+        store,
+        instrument="EUR_USD",
+        timeframe="H1",
+        start_at="2026-01-01T00:00:00+00:00",
+        end_at="2026-01-03T00:00:00+00:00",
+        limit=500,
+    )
+    assert result.initial_equity == 10_000.0
+    assert store.called[0:2] == ("EUR_USD", "H1")
+    assert store.called[2]["limit"] == 500
