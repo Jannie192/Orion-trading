@@ -190,6 +190,119 @@ class SupabaseMarketDataStore:
             raise RuntimeError("Supabase research result did not return run_id")
         return str(rows[0]["run_id"])
 
+    def record_strategy_experiment(
+        self,
+        *,
+        experiment,
+        days: int = 0,
+    ) -> str:
+        """Persist an experiment in the existing strategy research schema.
+
+        A strategy version is reused when the same name/version/instrument/timeframe
+        exists; otherwise a new research strategy version is created. The experiment
+        itself stores the complete parameter grid and ranked results as JSONB.
+        """
+        from .strategy_experiments import serialise_experiment
+
+        strategy_endpoint = f"{self.url}/rest/v1/strategy_versions"
+        lookup_params = {
+            "name": f"eq.{experiment.strategy_name}",
+            "version": f"eq.{experiment.strategy_version}",
+            "instrument": f"eq.{experiment.instrument}",
+            "timeframe": f"eq.{experiment.timeframe.upper()}",
+            "limit": "1",
+        }
+        response = requests.get(
+            strategy_endpoint,
+            headers=self._headers,
+            params=lookup_params,
+            timeout=self.timeout,
+        )
+        if not response.ok:
+            raise RuntimeError(
+                f"Supabase strategy version lookup failed ({response.status_code}): "
+                f"{response.text[:500]}"
+            )
+        existing = response.json()
+        if existing:
+            strategy_id = existing[0]["strategy_id"]
+        else:
+            payload = {
+                "name": experiment.strategy_name,
+                "version": experiment.strategy_version,
+                "instrument": experiment.instrument,
+                "timeframe": experiment.timeframe.upper(),
+                "days": days,
+                "risks": str(
+                    experiment.best.parameters.get("risk_per_trade_pct", "")
+                    if experiment.best else ""
+                ),
+                "stops": str(
+                    experiment.best.parameters.get("atr_stop_multiple", "")
+                    if experiment.best else ""
+                ),
+                "rewards": str(
+                    experiment.best.parameters.get("reward_multiple", "")
+                    if experiment.best else ""
+                ),
+                "status": "DRAFT",
+            }
+            response = requests.post(
+                strategy_endpoint,
+                headers={**self._headers, "Prefer": "return=representation"},
+                json=payload,
+                timeout=self.timeout,
+            )
+            if not response.ok:
+                raise RuntimeError(
+                    f"Supabase strategy version create failed ({response.status_code}): "
+                    f"{response.text[:500]}"
+                )
+            rows = response.json()
+            if not rows or not rows[0].get("strategy_id"):
+                raise RuntimeError("Supabase strategy version did not return strategy_id")
+            strategy_id = rows[0]["strategy_id"]
+
+        experiment_endpoint = f"{self.url}/rest/v1/strategy_experiments"
+        payload = serialise_experiment(experiment)
+        payload["strategy_id"] = strategy_id
+        payload["days"] = days
+        payload["grid"] = {
+            variant["parameters"]: variant["parameters"]
+            for variant in []
+        }
+        payload["grid"] = {
+            key: sorted(
+                {
+                    variant.parameters[key]
+                    for variant in experiment.variants
+                    if key in variant.parameters
+                }
+            )
+            for key in (
+                experiment.variants[0].parameters.keys() if experiment.variants else ()
+            )
+        }
+        payload["validation"] = {
+            "variant_count": experiment.variant_count,
+            "selection_rule": "score_then_return_then_drawdown_then_trade_count",
+        }
+        response = requests.post(
+            experiment_endpoint,
+            headers={**self._headers, "Prefer": "return=representation"},
+            json=payload,
+            timeout=self.timeout,
+        )
+        if not response.ok:
+            raise RuntimeError(
+                f"Supabase strategy experiment record failed ({response.status_code}): "
+                f"{response.text[:500]}"
+            )
+        rows = response.json()
+        if not rows or not rows[0].get("experiment_id"):
+            raise RuntimeError("Supabase strategy experiment did not return experiment_id")
+        return str(rows[0]["experiment_id"])
+
     def record_dataset(
         self,
         *,
