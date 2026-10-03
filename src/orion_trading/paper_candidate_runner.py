@@ -26,9 +26,21 @@ class CandidateRunResult:
 class PersistentPaperExecution:
     """Execution adapter that writes approved orders to the persistent paper ledger."""
 
-    def __init__(self, paper_store: SupabasePaperStore, timeframe: str) -> None:
+    def __init__(
+        self,
+        paper_store: SupabasePaperStore,
+        timeframe: str,
+        strategy_id: str | None = None,
+        strategy_name: str | None = None,
+        strategy_version: str | None = None,
+        source_experiment_id: str | None = None,
+    ) -> None:
         self.paper_store = paper_store
         self.timeframe = timeframe
+        self._strategy_id = strategy_id
+        self._strategy_name = strategy_name
+        self._strategy_version = strategy_version
+        self._source_experiment_id = source_experiment_id
 
     def submit(self, order: OrderRequest) -> OrderResult:
         if order.units <= 0:
@@ -51,6 +63,10 @@ class PersistentPaperExecution:
             "stop": order.stop,
             "target": order.target,
             "detected_at": order.created_at.isoformat(),
+            "strategy_id": self._strategy_id,
+            "strategy_name": self._strategy_name,
+            "strategy_version": self._strategy_version,
+            "source_experiment_id": self._source_experiment_id,
         })
         return OrderResult(True, order.client_order_id, "ACCEPTED")
 
@@ -94,7 +110,14 @@ class PaperCandidateRunner:
             frame.index[-1].to_pydatetime(),
         )
         equity = float(self.paper_store.snapshot()["account"]["equity"])
-        execution = PersistentPaperExecution(self.paper_store, timeframe)
+        execution = PersistentPaperExecution(
+            self.paper_store,
+            timeframe,
+            str(candidate["strategy_id"]),
+            str(candidate.get("name") or candidate.get("strategy_name") or "ORION"),
+            str(candidate.get("version") or candidate.get("strategy_version") or "1.0"),
+            candidate.get("source_experiment_id"),
+        )
         evaluation = engine.evaluate(frame, instrument=instrument, equity=equity, execution=execution)
 
         submitted = 0
