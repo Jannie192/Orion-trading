@@ -306,6 +306,73 @@ class SupabaseMarketDataStore:
             raise RuntimeError("Supabase strategy experiment did not return experiment_id")
         return str(rows[0]["experiment_id"])
 
+    def promote_paper_candidate(
+        self,
+        *,
+        experiment,
+        experiment_id: str,
+        validation: dict,
+        days: int = 0,
+    ) -> str:
+        """Promote a quantitatively approved experiment into the paper registry."""
+        if (validation.get("approval") or {}).get("status") != "PASS":
+            raise ValueError("only validation with approval status PASS can be promoted")
+
+        candidate = validation.get("validated_candidate")
+        if not candidate or not candidate.get("parameters"):
+            raise ValueError("validation does not contain a validated candidate")
+
+        strategy_endpoint = f"{self.url}/rest/v1/strategy_versions"
+        lookup_params = {
+            "name": f"eq.{experiment.strategy_name}",
+            "version": f"eq.{experiment.strategy_version}",
+            "instrument": f"eq.{experiment.instrument}",
+            "timeframe": f"eq.{experiment.timeframe.upper()}",
+            "limit": "1",
+        }
+        response = requests.get(
+            strategy_endpoint,
+            headers=self._headers,
+            params=lookup_params,
+            timeout=self.timeout,
+        )
+        if not response.ok:
+            raise RuntimeError(
+                f"Supabase paper candidate lookup failed ({response.status_code}): "
+                f"{response.text[:500]}"
+            )
+        rows = response.json()
+        if not rows:
+            raise RuntimeError("Supabase paper candidate requires an existing strategy version")
+
+        strategy_id = rows[0]["strategy_id"]
+        parameters = {str(key): float(value) for key, value in candidate["parameters"].items()}
+        payload = {
+            "status": "PAPER_CANDIDATE",
+            "days": days,
+            "risks": str(parameters.get("risk_per_trade_pct", "")),
+            "stops": str(parameters.get("atr_stop_multiple", "")),
+            "rewards": str(parameters.get("reward_multiple", "")),
+            "candidate_parameters": parameters,
+            "validation": validation,
+            "source_experiment_id": experiment_id,
+        }
+        response = requests.patch(
+            f"{strategy_endpoint}?strategy_id=eq.{strategy_id}",
+            headers={**self._headers, "Prefer": "return=representation"},
+            json=payload,
+            timeout=self.timeout,
+        )
+        if not response.ok:
+            raise RuntimeError(
+                f"Supabase paper candidate promotion failed ({response.status_code}): "
+                f"{response.text[:500]}"
+            )
+        rows = response.json()
+        if not rows or not rows[0].get("strategy_id"):
+            raise RuntimeError("Supabase paper candidate promotion did not return strategy_id")
+        return str(rows[0]["strategy_id"])
+
     def record_dataset(
         self,
         *,
