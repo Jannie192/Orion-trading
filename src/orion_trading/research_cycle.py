@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Iterable
 
-from .backtest import BacktestConfig, BacktestResult, Backtester
+from .backtest import BacktestResult, Backtester
 from .dataset_manager import DatasetManager
 
 
@@ -44,8 +44,8 @@ class ResearchCycle:
                     self.dataset_manager.store,
                     instrument=instrument,
                     timeframe=timeframe,
-                    start_at=start.astimezone().isoformat(),
-                    end_at=end.astimezone().isoformat(),
+                    start_at=sync.requested_start.astimezone(timezone.utc).isoformat(),
+                    end_at=sync.requested_end.astimezone(timezone.utc).isoformat(),
                 )
                 results.append(
                     ResearchResult(
