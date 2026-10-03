@@ -110,14 +110,13 @@ class SupabaseMarketDataStore:
             "order": "ts.asc",
             "limit": str(limit),
         }
-        if start_at:
+        if start_at and end_at:
+            params["and"] = f"(ts.gte.{start_at},ts.lt.{end_at})"
+        elif start_at:
             params["ts"] = f"gte.{start_at}"
-        if end_at:
-            params["ts"] = f"lt.{end_at}" if "ts" not in params else params["ts"]
-            if "ts" in params and start_at:
-                params.pop("ts")
-                params["ts"] = f"gte.{start_at}"
-                params["and"] = f"(ts.lt.{end_at})"
+        elif end_at:
+            params["ts"] = f"lt.{end_at}"
+
         response = requests.get(
             f"{self.url}/rest/v1/market_data_candles",
             headers=self._headers,
@@ -131,7 +130,10 @@ class SupabaseMarketDataStore:
             )
         rows = response.json()
         if not rows:
-            return pd.DataFrame(columns=["open", "high", "low", "close", "volume"], index=pd.DatetimeIndex([], tz="UTC"))
+            return pd.DataFrame(
+                columns=["open", "high", "low", "close", "volume"],
+                index=pd.DatetimeIndex([], tz="UTC"),
+            )
         frame = pd.DataFrame(rows)
         frame["ts"] = pd.to_datetime(frame["ts"], utc=True)
         frame = frame.set_index("ts").sort_index()
