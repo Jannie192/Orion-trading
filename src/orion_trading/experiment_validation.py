@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Callable
 import pandas as pd
 
 from .backtest import BacktestConfig, BacktestResult, Backtester
@@ -35,6 +36,7 @@ def validate_experiment(
     start: datetime | str,
     end: datetime | str,
     config: ExperimentValidationConfig | None = None,
+    progress: Callable[[int, int, str], None] | None = None,
 ) -> dict:
     """Walk-forward validate ranked experiment candidates, then stress OOS trades.
 
@@ -54,7 +56,12 @@ def validate_experiment(
     oos_results: list[tuple[BacktestResult, float]] = []
     selected_ranks: list[int] = []
 
+    total_folds = len(folds)
+    if progress is not None:
+        progress(0, total_folds, "start")
     for fold_number, (train, test) in enumerate(folds, start=1):
+        if progress is not None:
+            progress(fold_number, total_folds, "start")
         scored: list[tuple[object, BacktestResult]] = []
         for candidate in candidates:
             result = _backtester(
@@ -114,6 +121,8 @@ def validate_experiment(
                 },
             }
         )
+        if progress is not None:
+            progress(fold_number, total_folds, "complete")
 
     pnl = []
     for result, risk_pct in oos_results:
