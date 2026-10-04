@@ -125,10 +125,20 @@ def validate_experiment(
             progress(fold_number, total_folds, "complete")
 
     pnl = []
+    oos_wins = 0
+    oos_losses = 0
     for result, risk_pct in oos_results:
+        oos_wins += result.wins
+        oos_losses += result.losses
         risk_amount = max(cfg_equity(experiment) * risk_pct / 100.0, 1e-9)
         for trade in result.trades:
             pnl.append(trade.pnl / risk_amount)
+
+    oos_trade_count = oos_wins + oos_losses
+    oos_win_rate_pct = (
+        oos_wins / oos_trade_count * 100.0 if oos_trade_count else 0.0
+    )
+
     mc = monte_carlo(
         pnl,
         simulations=cfg.monte_carlo_simulations,
@@ -142,7 +152,12 @@ def validate_experiment(
         "negative_finish_pct": mc.negative_finish_pct,
     }
     approval = approve_validation(
-        {"fold_count": len(fold_reports), "oos_trade_count": len(pnl), "monte_carlo": mc_payload}
+        {
+            "fold_count": len(fold_reports),
+            "oos_trade_count": oos_trade_count,
+            "oos_win_rate_pct": oos_win_rate_pct,
+            "monte_carlo": mc_payload,
+        }
     )
 
     validated_candidate = None
@@ -165,7 +180,10 @@ def validate_experiment(
         "candidate_count": len(candidates),
         "fold_count": len(fold_reports),
         "folds": fold_reports,
-        "oos_trade_count": len(pnl),
+        "oos_trade_count": oos_trade_count,
+        "oos_wins": oos_wins,
+        "oos_losses": oos_losses,
+        "oos_win_rate_pct": oos_win_rate_pct,
         "validated_candidate": validated_candidate,
         "approval": approval,
         "monte_carlo": {
@@ -173,8 +191,6 @@ def validate_experiment(
             "trades": mc.trades,
             "median_net_r": mc.median_net_r,
             "p05_net_r": mc.p05_net_r,
-            "p95_net_r": mc.p95_net_r,
-            "median_max_drawdown_r": mc.median_max_drawdown_r,
             "p95_max_drawdown_r": mc.p95_max_drawdown_r,
             "p95_max_losing_streak": mc.p95_max_losing_streak,
             "negative_finish_pct": mc.negative_finish_pct,
@@ -183,11 +199,11 @@ def validate_experiment(
     }
 
 
-
 @dataclass(frozen=True)
 class CandidateApprovalConfig:
     min_folds: int = 3
     min_oos_trades: int = 30
+    min_oos_win_rate_pct: float = 75.0
     min_median_net_r: float = 0.0
     min_p05_net_r: float = 0.0
     max_negative_finish_pct: float = 45.0
@@ -202,6 +218,7 @@ def approve_validation(validation: dict, *, config: CandidateApprovalConfig | No
     checks = {
         "minimum_folds": validation.get("fold_count", 0) >= cfg.min_folds,
         "minimum_oos_trades": validation.get("oos_trade_count", 0) >= cfg.min_oos_trades,
+        "minimum_oos_win_rate": validation.get("oos_win_rate_pct", 0.0) >= cfg.min_oos_win_rate_pct,
         "median_net_r_non_negative": mc.get("median_net_r", 0.0) >= cfg.min_median_net_r,
         "p05_net_r_non_negative": mc.get("p05_net_r", 0.0) >= cfg.min_p05_net_r,
         "negative_finish_within_limit": mc.get("negative_finish_pct", 100.0) <= cfg.max_negative_finish_pct,
@@ -215,6 +232,7 @@ def approve_validation(validation: dict, *, config: CandidateApprovalConfig | No
         "thresholds": {
             "min_folds": cfg.min_folds,
             "min_oos_trades": cfg.min_oos_trades,
+            "min_oos_win_rate_pct": cfg.min_oos_win_rate_pct,
             "min_median_net_r": cfg.min_median_net_r,
             "min_p05_net_r": cfg.min_p05_net_r,
             "max_negative_finish_pct": cfg.max_negative_finish_pct,
@@ -223,6 +241,7 @@ def approve_validation(validation: dict, *, config: CandidateApprovalConfig | No
         },
         "next_stage": "PAPER_TRADING_CANDIDATE" if passed else "RESEARCH",
     }
+
 
 def cfg_equity(experiment: StrategyExperimentResult) -> float:
     """Use the experiment's common starting equity for validation."""
