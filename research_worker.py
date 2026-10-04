@@ -31,6 +31,7 @@ RESEARCH_DAYS = int(os.getenv("ORION_RESEARCH_DAYS", "365"))
 RESEARCH_TIMEFRAMES = tuple(x.strip().upper() for x in os.getenv("ORION_RESEARCH_TIMEFRAMES", "H1,H4,D1,M15").split(",") if x.strip())
 RESEARCH_INSTRUMENTS = tuple(x.strip().upper() for x in os.getenv("ORION_RESEARCH_INSTRUMENTS", "EURUSD,GBPUSD,USDJPY,USDCHF,AUDUSD,USDCAD,NZDUSD").split(",") if x.strip())
 RESEARCH_INTERVAL_SECONDS = int(os.getenv("ORION_RESEARCH_INTERVAL_SECONDS", "8"))
+HISTORICAL_CUTOFF_HOURS = int(os.getenv("ORION_HISTORICAL_CUTOFF_HOURS", "72"))
 
 
 def _now():
@@ -78,15 +79,37 @@ def _research_bootstrap():
         provider = DukascopyFXProvider()
         store = SupabaseMarketDataStore()
         manager = DatasetManager(store, provider, "dukascopy", fetch_limit=10000)
-        cycle = ResearchCycle(manager, result_store=store, experimenter=StrategyExperimenter(max_variants=27), experiment_store=store, experiment_grids={"*": {"risk_per_trade_pct": (0.25, 0.5, 0.75), "atr_stop_multiple": (1.0, 1.5, 2.0), "reward_multiple": (1.5, 2.0, 3.0)}})
-        end = datetime.now(timezone.utc)
+        cycle = ResearchCycle(
+            manager,
+            result_store=store,
+            experimenter=StrategyExperimenter(max_variants=27),
+            experiment_store=store,
+            experiment_grids={"*": {
+                "risk_per_trade_pct": (0.25, 0.5, 0.75),
+                "atr_stop_multiple": (1.0, 1.5, 2.0),
+                "reward_multiple": (1.5, 2.0, 3.0),
+            }},
+        )
+        # Historical feeds can lag the current clock. End the research window
+        # 72h behind now so the requested 365-day window remains fully historical.
+        end = datetime.now(timezone.utc) - timedelta(hours=HISTORICAL_CUTOFF_HOURS)
         start = end - timedelta(days=RESEARCH_DAYS)
-        print(f"Research bootstrap starting: instruments={len(RESEARCH_INSTRUMENTS)} timeframes={RESEARCH_TIMEFRAMES} days={RESEARCH_DAYS} provider=dukascopy", flush=True)
+        print(
+            f"Research bootstrap starting: instruments={len(RESEARCH_INSTRUMENTS)} "
+            f"timeframes={RESEARCH_TIMEFRAMES} days={RESEARCH_DAYS} "
+            f"historical_end={end.isoformat()} provider=dukascopy",
+            flush=True,
+        )
         for timeframe in RESEARCH_TIMEFRAMES:
             for instrument in RESEARCH_INSTRUMENTS:
                 try:
                     result = cycle.run((instrument,), (timeframe,), start, end)[0]
-                    print(f"Research complete {instrument}/{timeframe}: rows={result.data_rows} downloaded={result.data_downloaded} approval={result.approval_status} candidate={result.paper_candidate_id}", flush=True)
+                    print(
+                        f"Research complete {instrument}/{timeframe}: rows={result.data_rows} "
+                        f"downloaded={result.data_downloaded} approval={result.approval_status} "
+                        f"candidate={result.paper_candidate_id}",
+                        flush=True,
+                    )
                 except Exception as exc:
                     print(f"Research failed {instrument}/{timeframe}: {exc}", flush=True)
                 time.sleep(RESEARCH_INTERVAL_SECONDS)
