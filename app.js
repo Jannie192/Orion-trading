@@ -1,7 +1,7 @@
 const state={view:"overview",assets:["EURUSD","GBPUSD","USDJPY","USDCHF","AUDUSD","USDCAD","NZDUSD"],timeframe:"1H",mode:"research",api:"/api/paper-state",scanApi:"/api/paper-scan",botApi:"/api/bot-status",panels:JSON.parse(localStorage.getItem("orion-panels")||'{"equity":true,"signals":true,"research":true,"risk":true,"markets":true,"activity":true}')};
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
-const botTelemetry={};
-const paper={initial_equity:10000,equity:10000,closed_trades:0,realized_pnl:0};
+let botTelemetry={};
+const paper={initial_equity:10000,equity:10000,closed_trades:0,realized_pnl:0,open_orders:0,open_positions:[],recent_trades:[],performance:{}};
 let apiOnline=false,scanOnline=false,scanData={results:[],scanned_at:null},btReplayTimer=null,btReplayState=null,strategyHistory={versions:[],experiments:[]},researchIterations=[],lastLabRun=null;
 
 function save(){localStorage.setItem("orion-panels",JSON.stringify(state.panels))}
@@ -272,7 +272,7 @@ function render(){
 }
 function customize(){$("#panel-toggles").innerHTML=Object.entries({equity:"Equity & performance",signals:"Active signals",research:"Research status",risk:"Risk controls",markets:"Market watch",activity:"Recent activity"}).map(([k,v])=>'<div class="toggle-row"><span>'+v+'</span><button class="switch '+(state.panels[k]?"on":"")+'" data-panel="'+k+'"><i></i></button></div>').join("");$$("[data-panel]").forEach(b=>b.onclick=()=>{state.panels[b.dataset.panel]=!state.panels[b.dataset.panel];b.classList.toggle("on",state.panels[b.dataset.panel])});$("#customize-dialog").showModal()}
 async function refreshBotStatus(){try{const r=await fetch(state.botApi,{cache:"no-store"});botTelemetry=await r.json()}catch(e){botTelemetry={status:"UNKNOWN",stage:"TELEMETRY",message:"Dashboard cannot reach bot telemetry.",live_trading_enabled:false}}render()}
-async function refreshPaperState(){try{const r=await fetch(state.api,{cache:"no-store"}),d=await r.json();if(!r.ok||d.mode!=="paper"||d.live_trading_enabled!==false)throw new Error("unsafe paper response");Object.assign(paper,d.account||{});apiOnline=true}catch(e){apiOnline=false}render()}
+async function refreshPaperState(){try{const r=await fetch(state.api,{cache:"no-store"}),d=await r.json();if(!r.ok||d.mode!=="paper"||d.live_trading_enabled!==false)throw new Error("unsafe paper response");Object.assign(paper,d.account||{}, {open_positions:d.open_positions||[],recent_trades:d.recent_trades||[],performance:d.performance||{}});apiOnline=true}catch(e){apiOnline=false}render()}
 async function refreshScan(){try{const r=await fetch(state.scanApi,{cache:"no-store"}),d=await r.json();if(!r.ok||d.mode!=="paper"||d.live_trading_enabled!==false)throw new Error("unsafe scan response");scanData=d;scanOnline=true}catch(e){scanOnline=false}render()}
 $$(".nav-item").forEach(b=>b.onclick=()=>{$$(".nav-item").forEach(x=>x.classList.remove("active"));b.classList.add("active");state.view=b.dataset.view;render()});
 if($("#customize"))$("#customize").onclick=customize;if($("#refresh"))$("#refresh").onclick=refreshPaperState;if($("#customize-dialog"))$("#customize-dialog").addEventListener("close",()=>{save();render()});
