@@ -11,13 +11,7 @@ import requests
 class SupabaseMarketDataStore:
     """Persistent historical OHLCV store backed by Supabase PostgREST."""
 
-    def __init__(
-        self,
-        url: str | None = None,
-        service_role_key: str | None = None,
-        batch_size: int = 500,
-        timeout: int = 30,
-    ) -> None:
+    def __init__(self, url: str | None = None, service_role_key: str | None = None, batch_size: int = 500, timeout: int = 30) -> None:
         self.url = (url or os.getenv("ORION_SUPABASE_URL", "")).rstrip("/")
         self.service_role_key = service_role_key or os.getenv("ORION_SUPABASE_SERVICE_ROLE_KEY", "")
         if not self.url:
@@ -70,42 +64,46 @@ class SupabaseMarketDataStore:
         self._upsert_rows(rows)
         return len(rows)
 
-    def load(
-        self,
-        instrument: str,
-        timeframe: str,
-        start_at: str | None = None,
-        end_at: str | None = None,
-        limit: int = 10000,
-        provider: str | None = None,
-    ) -> pd.DataFrame:
+    def load(self, instrument: str, timeframe: str, start_at: str | None = None, end_at: str | None = None, limit: int = 10000, provider: str | None = None) -> pd.DataFrame:
         if limit <= 0:
             raise ValueError("limit must be positive")
-        params = {
+
+        base_params = {
             "instrument": f"eq.{instrument}",
             "timeframe": f"eq.{timeframe.upper()}",
             "order": "ts.asc",
-            "limit": str(limit),
         }
         if provider:
-            params["provider"] = f"eq.{provider}"
+            base_params["provider"] = f"eq.{provider}"
         if start_at and end_at:
-            params["and"] = f"(ts.gte.{start_at},ts.lt.{end_at})"
+            base_params["and"] = f"(ts.gte.{start_at},ts.lt.{end_at})"
         elif start_at:
-            params["ts"] = f"gte.{start_at}"
+            base_params["ts"] = f"gte.{start_at}"
         elif end_at:
-            params["ts"] = f"lt.{end_at}"
-        response = requests.get(
-            f"{self.url}/rest/v1/market_data_candles",
-            headers=self._headers,
-            params=params,
-            timeout=self.timeout,
-        )
-        if not response.ok:
-            raise RuntimeError(f"Supabase candle query failed ({response.status_code}): {response.text[:500]}")
-        rows = response.json()
+            base_params["ts"] = f"lt.{end_at}"
+
+        # Supabase/PostgREST commonly caps a single response at 1000 rows.
+        # Paginate explicitly so research never silently backtests only the first 1000 candles.
+        page_size = min(1000, limit)
+        rows: list[dict] = []
+        offset = 0
+        endpoint = f"{self.url}/rest/v1/market_data_candles"
+        while len(rows) < limit:
+            params = {**base_params, "limit": str(min(page_size, limit - len(rows))), "offset": str(offset)}
+            response = requests.get(endpoint, headers=self._headers, params=params, timeout=self.timeout)
+            if not response.ok:
+                raise RuntimeError(f"Supabase candle query failed ({response.status_code}): {response.text[:500]}")
+            page = response.json()
+            if not page:
+                break
+            rows.extend(page)
+            if len(page) < page_size:
+                break
+            offset += len(page)
+
         if not rows:
             return pd.DataFrame(columns=["open", "high", "low", "close", "volume"], index=pd.DatetimeIndex([], tz="UTC"))
+
         frame = pd.DataFrame(rows)
         frame["ts"] = pd.to_datetime(frame["ts"], utc=True)
         frame = frame.set_index("ts").sort_index()
