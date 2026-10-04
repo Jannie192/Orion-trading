@@ -74,14 +74,14 @@ def _research_bootstrap():
         from orion_trading.research_cycle import ResearchCycle
         from orion_trading.strategy_experiments import StrategyExperimenter
         from orion_trading.supabase_market_store import SupabaseMarketDataStore
-        from orion_trading.twelve_data_provider import BiquoteFXProvider
-        provider = BiquoteFXProvider()
+        from orion_trading.twelve_data_provider import YahooFXProvider
+        provider = YahooFXProvider()
         store = SupabaseMarketDataStore()
-        manager = DatasetManager(store, provider, "biquote", fetch_limit=10000)
+        manager = DatasetManager(store, provider, "yahoo", fetch_limit=10000)
         cycle = ResearchCycle(manager, result_store=store, experimenter=StrategyExperimenter(max_variants=27), experiment_store=store, experiment_grids={"*": {"risk_per_trade_pct": (0.25, 0.5, 0.75), "atr_stop_multiple": (1.0, 1.5, 2.0), "reward_multiple": (1.5, 2.0, 3.0)}})
         end = datetime.now(timezone.utc)
         start = end - timedelta(days=RESEARCH_DAYS)
-        print(f"Research bootstrap starting: instruments={len(RESEARCH_INSTRUMENTS)} timeframes={RESEARCH_TIMEFRAMES} days={RESEARCH_DAYS}", flush=True)
+        print(f"Research bootstrap starting: instruments={len(RESEARCH_INSTRUMENTS)} timeframes={RESEARCH_TIMEFRAMES} days={RESEARCH_DAYS} provider=yahoo", flush=True)
         for timeframe in RESEARCH_TIMEFRAMES:
             for instrument in RESEARCH_INSTRUMENTS:
                 try:
