@@ -6,7 +6,7 @@ import os
 import sys
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
@@ -38,14 +38,12 @@ def _now():
 
 
 def _paper_cycle():
-    """Continuously evaluate approved paper candidates when server credentials are configured."""
     try:
         from orion_trading.paper_candidate_runner import PaperCandidateRunner
         from orion_trading.paper_performance import PaperPerformanceEngine
         from orion_trading.supabase_market_store import SupabaseMarketDataStore
         from orion_trading.supabase_paper_store import SupabasePaperStore
         from orion_trading.supabase_strategy_store import SupabaseStrategyStore
-
         market = SupabaseMarketDataStore()
         paper = SupabasePaperStore()
         strategies = SupabaseStrategyStore()
@@ -54,26 +52,15 @@ def _paper_cycle():
     except Exception as exc:
         print(f"Paper cycle disabled: {exc}", flush=True)
         return
-
     while True:
         try:
             candidates = runner.candidates()
             print(f"Paper cycle: candidates={len(candidates)}", flush=True)
             for candidate in candidates:
                 result = runner.run_candidate(candidate)
-                print(
-                    f"Paper candidate {result.strategy_id} "
-                    f"{result.instrument}/{result.timeframe}: "
-                    f"submitted={result.submitted_orders} closed={result.closed_trades}",
-                    flush=True,
-                )
+                print(f"Paper candidate {result.strategy_id} {result.instrument}/{result.timeframe}: submitted={result.submitted_orders} closed={result.closed_trades}", flush=True)
                 report = performance.evaluate_and_promote(candidate)
-                print(
-                    f"Paper performance {result.strategy_id}: "
-                    f"trades={report.trades} expectancy_r={report.expectancy_r:.3f} "
-                    f"eligible={report.eligible}",
-                    flush=True,
-                )
+                print(f"Paper performance {result.strategy_id}: trades={report.trades} expectancy_r={report.expectancy_r:.3f} eligible={report.eligible}", flush=True)
         except Exception as exc:
             print(f"Paper cycle error: {exc}", flush=True)
         time.sleep(PAPER_INTERVAL_SECONDS)
@@ -88,38 +75,18 @@ def _research_bootstrap():
         from orion_trading.strategy_experiments import StrategyExperimenter
         from orion_trading.supabase_market_store import SupabaseMarketDataStore
         from orion_trading.twelve_data_provider import BiquoteFXProvider
-
         provider = BiquoteFXProvider()
         store = SupabaseMarketDataStore()
         manager = DatasetManager(store, provider, "biquote", fetch_limit=10000)
-        cycle = ResearchCycle(
-            manager,
-            result_store=store,
-            experimenter=StrategyExperimenter(max_variants=27),
-            experiment_store=store,
-            experiment_grids={"*": {
-                "risk_per_trade_pct": (0.25, 0.5, 0.75),
-                "atr_stop_multiple": (1.0, 1.5, 2.0),
-                "reward_multiple": (1.5, 2.0, 3.0),
-            }},
-        )
+        cycle = ResearchCycle(manager, result_store=store, experimenter=StrategyExperimenter(max_variants=27), experiment_store=store, experiment_grids={"*": {"risk_per_trade_pct": (0.25, 0.5, 0.75), "atr_stop_multiple": (1.0, 1.5, 2.0), "reward_multiple": (1.5, 2.0, 3.0)}})
         end = datetime.now(timezone.utc)
         start = end - timedelta(days=RESEARCH_DAYS)
-        print(
-            f"Research bootstrap starting: instruments={len(RESEARCH_INSTRUMENTS)} "
-            f"timeframes={RESEARCH_TIMEFRAMES} days={RESEARCH_DAYS}",
-            flush=True,
-        )
+        print(f"Research bootstrap starting: instruments={len(RESEARCH_INSTRUMENTS)} timeframes={RESEARCH_TIMEFRAMES} days={RESEARCH_DAYS}", flush=True)
         for timeframe in RESEARCH_TIMEFRAMES:
             for instrument in RESEARCH_INSTRUMENTS:
                 try:
                     result = cycle.run((instrument,), (timeframe,), start, end)[0]
-                    print(
-                        f"Research complete {instrument}/{timeframe}: "
-                        f"rows={result.data_rows} downloaded={result.data_downloaded} "
-                        f"approval={result.approval_status} candidate={result.paper_candidate_id}",
-                        flush=True,
-                    )
+                    print(f"Research complete {instrument}/{timeframe}: rows={result.data_rows} downloaded={result.data_downloaded} approval={result.approval_status} candidate={result.paper_candidate_id}", flush=True)
                 except Exception as exc:
                     print(f"Research failed {instrument}/{timeframe}: {exc}", flush=True)
                 time.sleep(RESEARCH_INTERVAL_SECONDS)
@@ -152,13 +119,7 @@ def _supabase_request(method, path, **kwargs):
     worker_key = os.getenv("ORION_WORKER_KEY", "")
     if not url or not key or not worker_key:
         raise RuntimeError("WORKER_SUPABASE_CONFIGURATION_MISSING")
-    headers = {
-        "apikey": key,
-        "Authorization": f"Bearer {key}",
-        "X-Orion-Worker-Key": worker_key,
-        "Content-Type": "application/json",
-        **kwargs.pop("headers", {}),
-    }
+    headers = {"apikey": key, "Authorization": f"Bearer {key}", "X-Orion-Worker-Key": worker_key, "Content-Type": "application/json", **kwargs.pop("headers", {})}
     response = requests.request(method, f"{url}/rest/v1/{path}", headers=headers, timeout=15, **kwargs)
     if not response.ok:
         raise RuntimeError(f"Supabase request failed ({response.status_code}): {response.text[:500]}")
@@ -167,31 +128,18 @@ def _supabase_request(method, path, **kwargs):
 
 def _update_job(job_id, patch):
     patch = {**patch, "updated_at": _now()}
-    rows = _supabase_request(
-        "PATCH",
-        f"research_jobs?job_id=eq.{job_id}",
-        json=patch,
-        headers={"Prefer": "return=representation"},
-    )
+    rows = _supabase_request("PATCH", f"research_jobs?job_id=eq.{job_id}", json=patch, headers={"Prefer": "return=representation"})
     if not rows:
         raise RuntimeError("RESEARCH_JOB_NOT_FOUND")
     return rows[0]
 
 
 def _claim_next_job():
-    rows = _supabase_request(
-        "GET",
-        "research_jobs?select=*&status=eq.QUEUED&order=created_at.asc&limit=1",
-    )
+    rows = _supabase_request("GET", "research_jobs?select=*&status=eq.QUEUED&order=created_at.asc&limit=1")
     if not rows:
         return None
     job = rows[0]
-    claimed = _supabase_request(
-        "PATCH",
-        f"research_jobs?job_id=eq.{job['job_id']}&status=eq.QUEUED",
-        json={"status": "RUNNING", "progress_pct": 1, "started_at": _now(), "updated_at": _now()},
-        headers={"Prefer": "return=representation"},
-    )
+    claimed = _supabase_request("PATCH", f"research_jobs?job_id=eq.{job['job_id']}&status=eq.QUEUED", json={"status": "RUNNING", "progress_pct": 1, "started_at": _now(), "updated_at": _now()}, headers={"Prefer": "return=representation"})
     return claimed[0] if claimed else None
 
 
@@ -204,11 +152,9 @@ def _poll_queue():
                 print(f"Claimed research job {job['job_id']}", flush=True)
                 _run_job(job["job_id"], payload)
             else:
-                import time
                 time.sleep(3)
         except Exception as exc:
             print(f"Research queue poll error: {exc}", flush=True)
-            import time
             time.sleep(5)
 
 
@@ -216,33 +162,11 @@ def _run_job(job_id, payload):
     try:
         _update_job(job_id, {"status": "RUNNING", "progress_pct": 5, "started_at": _now()})
         _update_job(job_id, {"progress_pct": 15})
-        result = MODULE.run(
-            str(payload.get("instrument", "BTCUSDT")).upper(),
-            str(payload.get("timeframe", "H1")).upper(),
-            int(payload.get("days", 90)),
-            str(payload.get("risks", "0.25,0.5,0.75")),
-            str(payload.get("stops", "1,1.5,2")),
-            str(payload.get("rewards", "1.5,2,3")),
-            train_bars=payload.get("train_bars"),
-            test_bars=payload.get("test_bars"),
-            step_bars=payload.get("step_bars"),
-            max_folds=payload.get("max_folds", 8),
-        )
-        _update_job(job_id, {
-            "status": "COMPLETED",
-            "progress_pct": 100,
-            "result": {**result, "worker": "railway", "stage": "COMPLETED"},
-            "completed_at": _now(),
-            "error": None,
-        })
+        result = MODULE.run(str(payload.get("instrument", "BTCUSDT")).upper(), str(payload.get("timeframe", "H1")).upper(), int(payload.get("days", 90)), str(payload.get("risks", "0.25,0.5,0.75")), str(payload.get("stops", "1,1.5,2")), str(payload.get("rewards", "1.5,2,3")), train_bars=payload.get("train_bars"), test_bars=payload.get("test_bars"), step_bars=payload.get("step_bars"), max_folds=payload.get("max_folds", 8))
+        _update_job(job_id, {"status": "COMPLETED", "progress_pct": 100, "result": {**result, "worker": "railway", "stage": "COMPLETED"}, "completed_at": _now(), "error": None})
     except Exception as exc:
         try:
-            _update_job(job_id, {
-                "status": "FAILED",
-                "progress_pct": 100,
-                "error": str(exc),
-                "completed_at": _now(),
-            })
+            _update_job(job_id, {"status": "FAILED", "progress_pct": 100, "error": str(exc), "completed_at": _now()})
         except Exception as update_exc:
             print(f"Failed to persist job error: {update_exc}", flush=True)
         print(f"Research job {job_id} failed: {exc}", flush=True)
@@ -251,35 +175,19 @@ def _run_job(job_id, payload):
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         print(fmt % args, flush=True)
-
     def do_OPTIONS(self):
         _json_response(self, 204, {})
-
     def do_GET(self):
         path = urlparse(self.path).path
         if path == "/health":
-            return _json_response(
-                self,
-                200,
-                {
-                    "ok": True,
-                    "service": "orion-research-worker",
-                    "live_trading_enabled": False,
-                    "job_mode": "asynchronous",
-                    "paper_cycle_enabled": True,
-                    "research_bootstrap_enabled": RESEARCH_BOOTSTRAP,
-                },
-            )
+            return _json_response(self, 200, {"ok": True, "service": "orion-research-worker", "live_trading_enabled": False, "job_mode": "asynchronous", "paper_cycle_enabled": True, "research_bootstrap_enabled": RESEARCH_BOOTSTRAP})
         return _json_response(self, 404, {"error": "NOT_FOUND"})
-
     def do_POST(self):
         if not _authorized(self):
             return _json_response(self, 401, {"error": "UNAUTHORIZED"})
-
         path = urlparse(self.path).path
         if path != "/run-job":
             return _json_response(self, 404, {"error": "NOT_FOUND"})
-
         try:
             length = int(self.headers.get("Content-Length", "0"))
             if length > MAX_BODY:
@@ -290,20 +198,11 @@ class Handler(BaseHTTPRequestHandler):
             payload = body.get("request") if isinstance(body.get("request"), dict) else {}
             if not job_id:
                 raise ValueError("JOB_ID_REQUIRED")
-
             thread = threading.Thread(target=_run_job, args=(job_id, payload), daemon=True)
             thread.start()
-            _json_response(
-                self,
-                202,
-                {"mode": "research", "live_trading_enabled": False, "worker": "railway", "job_id": job_id, "status": "STARTED"},
-            )
+            _json_response(self, 202, {"mode": "research", "live_trading_enabled": False, "worker": "railway", "job_id": job_id, "status": "STARTED"})
         except Exception as exc:
-            _json_response(
-                self,
-                400,
-                {"mode": "research", "live_trading_enabled": False, "worker": "railway", "error": str(exc)},
-            )
+            _json_response(self, 400, {"mode": "research", "live_trading_enabled": False, "worker": "railway", "error": str(exc)})
 
 
 if __name__ == "__main__":
