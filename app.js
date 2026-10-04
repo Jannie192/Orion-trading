@@ -248,8 +248,11 @@ function renderMarkets(){
   return '<div class="card full"><div class="card-title"><h3>FX Market Scanner</h3>'+statusPill(scanOnline?"ONLINE":"WAITING",scanOnline)+'</div><div style="overflow:auto"><table class="table"><thead><tr><th>Pair</th><th>Timeframe</th><th>Regime</th><th>Signal</th><th>Decision context</th></tr></thead><tbody>'+rows+'</tbody></table></div><div class="sub" style="margin-top:12px">Universe: EURUSD • GBPUSD • USDJPY • USDCHF • AUDUSD • USDCAD • NZDUSD. Live execution is disabled; scanner decisions remain paper-safe.</div></div>';
 }
 function renderSignals(){
-  const rows=(scanData.results||[]).filter(x=>x.signal||x.setup).map(x=>'<div class="metric-row"><span><strong>'+esc(x.instrument||x.symbol)+'</strong><small>'+esc(x.signal||x.setup)+' • '+esc(x.timeframe||state.timeframe)+'</small></span><span class="pill">'+esc(x.valid===false?"REJECTED":x.valid===true?"VALID":"OBSERVE")+'</span></div>').join("");
-  return '<div class="card full"><div class="card-title"><h3>Signal Desk</h3><span class="pill">PAPER ONLY</span></div>'+(rows||'<div class="empty">No active signal observations. ORION is monitoring the FX universe.</div>')+'</div>';
+  const rows=(scanData.results||[]).flatMap(x=>(x.candidates||[]).map(c=>({pair:x.instrument,timeframe:x.timeframe,c}))).filter(x=>x.c).sort((a,b)=>(b.c.score||0)-(a.c.score||0)).slice(0,12).map(x=>{
+    const c=x.c;
+    return '<div class="metric-row"><span><strong>'+esc(x.pair)+'</strong><small>'+esc(x.timeframe)+' • '+esc(c.regime||"—")+' • '+esc(c.direction||"NONE")+'</small></span><span class="pill">'+esc(c.valid?"VALID":"REJECTED")+' '+(c.confidence!=null?fmt(c.confidence,0)+"%":"")+'</span></div>';
+  }).join("");
+  return '<div class="card full"><div class="card-title"><h3>Signal Desk</h3><span class="pill">PAPER ONLY</span></div>'+(rows||'<div class="empty">No candidate observations yet. ORION is monitoring the FX universe.</div>')+'</div>';
 }
 function renderRisk(){
   const a=paper||{};
