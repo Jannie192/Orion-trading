@@ -229,6 +229,55 @@ function renderCommand(){
     '<div class="card"><div class="card-title"><h3>Market Scanner</h3><span class="pill">'+esc(t.provider||"DUKASCOPY")+'</span></div><div class="hero-metric">'+esc(t.instrument||"STANDBY")+'</div><div class="sub">Timeframe: '+esc(t.timeframe||"—")+' • Last scan: '+scanTime+'</div><div class="metric-row"><span>Scanner state</span><strong>'+esc(stage)+'</strong></div></div>'+
     '<div class="card"><div class="card-title"><h3>Research Engine</h3><span class="pill">STRICT GATE</span></div><div class="hero-metric">'+progress+'</div><div class="sub">500 OOS trades minimum • 75% OOS win rate minimum</div><div class="metric-row"><span>Current instrument</span><strong>'+esc(t.instrument||"—")+'</strong></div></div>'+
     '<div class="card"><div class="card-title"><h3>Risk Engine</h3>'+statusPill("LIVE LOCKED",true)+'</div><div class="hero-metric">PAPER</div><div class="sub">Live execution remains disabled.</div><div class="metric-row"><span>Provider</span><strong>'+esc(t.provider||"—")+'</strong></div></div>'+
+    '<section class="card full"><div class="card-title"><h3>Paper Trading</h3><span class="pill">LIVE SIMULATION</span></div><div class="metric-row"><span>Equity</span><strong><span class="pill">TELEMETRY</span></div><div class="metric-row"><span><strong>'+esc(t.message||"No recent activity")+'</strong><small>'+esc(t.instrument||"ORION")+' • '+esc(t.timeframe||"SYSTEM")+'</small></span><span class="pill">'+progress+'</span></div><div class="metric-row"><span>Worker status</span><strong>'+esc(t.status||"UNKNOWN")+'</strong></div></section>'+
+  '</div>';
+}
+function renderMarkets(){
+  const universe=state.assets||[];
+  const source=scanData.results||[];
+  const byPair=Object.fromEntries(source.map(x=>[x.instrument,x]));
+  const rows=universe.map(pair=>{
+    const matches=source.filter(x=>x.instrument===pair);
+    const candidate=matches.flatMap(x=>(x.candidates||[])).sort((a,b)=>(b.score||0)-(a.score||0))[0];
+    const x=matches[0]||{};
+    const signal=candidate?(candidate.valid?(candidate.direction||"SETUP"):"REJECTED"):"WAITING";
+    const reason=candidate?(candidate.rejection_reason||((candidate.confirmations||[]).join(", ")||"Candidate scanned")):(x.message||"Awaiting scanner result");
+    const tf=candidate?.timeframe||x.timeframe||"—";
+    return '<tr><td><strong>'+esc(pair)+'</strong></td><td>'+esc(tf)+'</td><td>'+esc(candidate?.regime||x.regime||"—")+'</td><td>'+esc(signal)+'</td><td>'+esc(reason)+'</td></tr>';
+  }).join("");
+  return '<div class="card full"><div class="card-title"><h3>FX Market Scanner</h3>'+statusPill(scanOnline?"ONLINE":"WAITING",scanOnline)+'</div><div style="overflow:auto"><table class="table"><thead><tr><th>Pair</th><th>Timeframe</th><th>Regime</th><th>Signal</th><th>Decision context</th></tr></thead><tbody>'+rows+'</tbody></table></div><div class="sub" style="margin-top:12px">Universe: EURUSD • GBPUSD • USDJPY • USDCHF • AUDUSD • USDCAD • NZDUSD. Live execution is disabled; scanner decisions remain paper-safe.</div></div>';
+}
+function renderSignals(){
+  const rows=(scanData.results||[]).flatMap(x=>(x.candidates||[]).map(c=>({pair:x.instrument,timeframe:x.timeframe,c}))).filter(x=>x.c).sort((a,b)=>(b.c.score||0)-(a.c.score||0)).slice(0,12).map(x=>{
+    const c=x.c;
+    return '<div class="metric-row"><span><strong>'+esc(x.pair)+'</strong><small>'+esc(x.timeframe)+' • '+esc(c.regime||"—")+' • '+esc(c.direction||"NONE")+'</small></span><span class="pill">'+esc(c.valid?"VALID":"REJECTED")+' '+(c.confidence!=null?fmt(c.confidence,0)+"%":"")+'</span></div>';
+  }).join("");
+  return '<div class="card full"><div class="card-title"><h3>Signal Desk</h3><span class="pill">PAPER ONLY</span></div>'+(rows||'<div class="empty">No candidate observations yet. ORION is monitoring the FX universe.</div>')+'</div>';
+}
+function renderRisk(){
+  const a=paper||{};
+  return '<div class="grid"><div class="card"><div class="card-title"><h3>Execution lock</h3>'+statusPill("ACTIVE",true)+'</div><div class="hero-metric">PAPER</div><div class="sub">No live orders can be sent from this dashboard.</div></div><div class="card"><div class="card-title"><h3>Account</h3><span class="pill">MONITOR</span></div><div class="metric-row"><span>Equity</span><strong>'+fmt(a.equity)+'</strong></div><div class="metric-row"><span>Realized P&amp;L</span><strong>'+fmt(a.realized_pnl)+'</strong></div><div class="metric-row"><span>Closed trades</span><strong>'+esc(a.closed_trades??0)+'</strong></div></div><div class="card full"><div class="card-title"><h3>Risk controls</h3><span class="pill good">ARMED</span></div><div class="metric-row"><span>Strategy risk</span><strong>Candidate-defined</strong></div><div class="metric-row"><span>Kill switch</span><strong>READY</strong></div><div class="metric-row"><span>Broker connectivity</span><strong>DISABLED</strong></div></div></div>';
+}
+function renderSettings(){
+ return '<div class="grid"><div class="card"><div class="card-title"><h3>System mode</h3><span class="pill">LOCKED</span></div><div class="hero-metric">RESEARCH</div><div class="sub">Paper execution is enabled; live execution is deliberately disabled.</div></div><div class="card"><div class="card-title"><h3>FX universe</h3><span class="pill">7 PAIRS</span></div><div class="sub">EURUSD, GBPUSD, USDJPY, USDCHF, AUDUSD, USDCAD, NZDUSD</div></div><div class="card full"><div class="card-title"><h3>Validation policy</h3><span class="pill">NON-NEGOTIABLE</span></div><div class="metric-row"><span>Minimum OOS trades</span><strong>500</strong></div><div class="metric-row"><span>Minimum OOS win rate</span><strong>75%</strong></div><div class="metric-row"><span>Walk-forward</span><strong>REQUIRED</strong></div><div class="metric-row"><span>Monte Carlo</span><strong>REQUIRED</strong></div></div></div>';
+}
+function render(){
+  $( "#page-title").textContent=state.view==="overview"?"Command Center":state.view[0].toUpperCase()+state.view.slice(1);
+  $(".mode-badge").textContent="PAPER / RESEARCH";
+  $(".live-state").innerHTML='<i class="dot '+(apiOnline?"green":"amber")+'"></i> <span id="engine-state">'+(apiOnline?"Paper API online":"Paper API unavailable")+'</span>';
+  const views={overview:renderCommand,markets:renderMarkets,signals:renderSignals,research:renderStrategyLab,backtests:renderBacktests,risk:renderRisk,settings:renderSettings};
+  $( "#view").innerHTML=(views[state.view]||renderCommand)();
+  if(state.view==="backtests")$( "#run-backtest").onclick=runBacktest;
+  if(state.view==="research"){bindResearchControls();populateComparison();renderIterationHistory();}
+}
+function customize(){$("#panel-toggles").innerHTML=Object.entries({equity:"Equity & performance",signals:"Active signals",research:"Research status",risk:"Risk controls",markets:"Market watch",activity:"Recent activity"}).map(([k,v])=>'<div class="toggle-row"><span>'+v+'</span><button class="switch '+(state.panels[k]?"on":"")+'" data-panel="'+k+'"><i></i></button></div>').join("");$$("[data-panel]").forEach(b=>b.onclick=()=>{state.panels[b.dataset.panel]=!state.panels[b.dataset.panel];b.classList.toggle("on",state.panels[b.dataset.panel])});$("#customize-dialog").showModal()}
+async function refreshBotStatus(){try{const r=await fetch(state.botApi,{cache:"no-store"});botTelemetry=await r.json()}catch(e){botTelemetry={status:"UNKNOWN",stage:"TELEMETRY",message:"Dashboard cannot reach bot telemetry.",live_trading_enabled:false}}render()}
+async function refreshPaperState(){try{const r=await fetch(state.api,{cache:"no-store"}),d=await r.json();if(!r.ok||d.mode!=="paper"||d.live_trading_enabled!==false)throw new Error("unsafe paper response");Object.assign(paper,d.account||{}, {open_positions:d.open_positions||[],recent_trades:d.recent_trades||[],performance:d.performance||{}});apiOnline=true}catch(e){apiOnline=false}render()}
+async function refreshScan(){try{const r=await fetch(state.scanApi,{cache:"no-store"}),d=await r.json();if(!r.ok||d.mode!=="paper"||d.live_trading_enabled!==false)throw new Error("unsafe scan response");scanData=d;scanOnline=true}catch(e){scanOnline=false}render()}
+$$(".nav-item").forEach(b=>b.onclick=()=>{$$(".nav-item").forEach(x=>x.classList.remove("active"));b.classList.add("active");state.view=b.dataset.view;render()});
+if($("#customize"))$("#customize").onclick=customize;if($("#refresh"))$("#refresh").onclick=refreshPaperState;if($("#customize-dialog"))$("#customize-dialog").addEventListener("close",()=>{save();render()});
+chips();render();refreshBotStatus();refreshPaperState();refreshScan();refreshStrategyHistory();refreshResearchIterations();refreshCrossResearch();setInterval(refreshBotStatus,10000);setInterval(refreshPaperState,10000);setInterval(refreshScan,60000);
++Number(paper.equity||0).toLocaleString()+'</strong></div><div class="metric-row"><span>Open trades</span><strong>'+esc(paper.open_positions?.length||0)+'</strong></div><div class="metric-row"><span>Closed trades</span><strong>'+esc(paper.performance?.trades??paper.closed_trades??0)+'</strong></div><div class="metric-row"><span>Win rate</span><strong>'+fmt(paper.performance?.win_rate_pct,1)+'%</strong></div><div class="metric-row"><span>Profit factor</span><strong>'+fmt(paper.performance?.profit_factor,2)+'</strong></div><div class="sub" style="margin-top:12px">Persistent paper account. No broker orders are being sent.</div></section>'+
     '<section class="card full"><div class="card-title"><h3>Bot Activity</h3><span class="pill">TELEMETRY</span></div><div class="metric-row"><span><strong>'+esc(t.message||"No recent activity")+'</strong><small>'+esc(t.instrument||"ORION")+' • '+esc(t.timeframe||"SYSTEM")+'</small></span><span class="pill">'+progress+'</span></div><div class="metric-row"><span>Worker status</span><strong>'+esc(t.status||"UNKNOWN")+'</strong></div></section>'+
   '</div>';
 }
