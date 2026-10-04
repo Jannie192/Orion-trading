@@ -27,8 +27,18 @@ class OrderResult:
 
 
 class ExecutionAdapter(Protocol):
+    """Broker-neutral order execution boundary.
+
+    Implementations may be paper, MT5, REST, FIX, or another broker adapter.
+    Strategy and risk code must never depend on the concrete broker.
+    """
+
     def submit(self, order: OrderRequest) -> OrderResult:
         """Submit an order without exposing broker-specific details."""
+
+    def health_check(self) -> bool:
+        """Return True only when the execution venue is healthy."""
+
 
 
 class PaperExecution:
@@ -36,6 +46,9 @@ class PaperExecution:
 
     def __init__(self) -> None:
         self.orders: list[OrderRequest] = []
+
+    def health_check(self) -> bool:
+        return True
 
     def submit(self, order: OrderRequest) -> OrderResult:
         if order.units <= 0:
