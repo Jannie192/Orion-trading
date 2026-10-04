@@ -233,8 +233,19 @@ function renderCommand(){
   '</div>';
 }
 function renderMarkets(){
-  const rows=(scanData.results||[]).map(x=>'<tr><td><strong>'+esc(x.instrument||x.symbol)+'</strong></td><td>'+esc(x.timeframe||state.timeframe)+'</td><td>'+esc(x.regime||"—")+'</td><td>'+esc(x.signal||x.setup||"NONE")+'</td><td>'+esc(x.reason||x.message||"Monitoring")+'</td></tr>').join("");
-  return '<div class="card full"><div class="card-title"><h3>FX Market Scanner</h3>'+statusPill(scanOnline?"ONLINE":"WAITING",scanOnline)+'</div><div style="overflow:auto"><table class="table"><thead><tr><th>Pair</th><th>Timeframe</th><th>Regime</th><th>Signal</th><th>Decision context</th></tr></thead><tbody>'+rows+'</tbody></table></div><div class="sub" style="margin-top:12px">Universe: EURUSD • GBPUSD • USDJPY • USDCHF • AUDUSD • USDCAD • NZDUSD. Scanner data is read-only and paper-safe.</div></div>';
+  const universe=state.assets||[];
+  const source=scanData.results||[];
+  const byPair=Object.fromEntries(source.map(x=>[x.instrument,x]));
+  const rows=universe.map(pair=>{
+    const matches=source.filter(x=>x.instrument===pair);
+    const candidate=matches.flatMap(x=>(x.candidates||[])).sort((a,b)=>(b.score||0)-(a.score||0))[0];
+    const x=matches[0]||{};
+    const signal=candidate?(candidate.valid?(candidate.direction||"SETUP"):"REJECTED"):"WAITING";
+    const reason=candidate?(candidate.rejection_reason||((candidate.confirmations||[]).join(", ")||"Candidate scanned")):(x.message||"Awaiting scanner result");
+    const tf=candidate?.timeframe||x.timeframe||"—";
+    return '<tr><td><strong>'+esc(pair)+'</strong></td><td>'+esc(tf)+'</td><td>'+esc(candidate?.regime||x.regime||"—")+'</td><td>'+esc(signal)+'</td><td>'+esc(reason)+'</td></tr>';
+  }).join("");
+  return '<div class="card full"><div class="card-title"><h3>FX Market Scanner</h3>'+statusPill(scanOnline?"ONLINE":"WAITING",scanOnline)+'</div><div style="overflow:auto"><table class="table"><thead><tr><th>Pair</th><th>Timeframe</th><th>Regime</th><th>Signal</th><th>Decision context</th></tr></thead><tbody>'+rows+'</tbody></table></div><div class="sub" style="margin-top:12px">Universe: EURUSD • GBPUSD • USDJPY • USDCHF • AUDUSD • USDCAD • NZDUSD. Live execution is disabled; scanner decisions remain paper-safe.</div></div>';
 }
 function renderSignals(){
   const rows=(scanData.results||[]).filter(x=>x.signal||x.setup).map(x=>'<div class="metric-row"><span><strong>'+esc(x.instrument||x.symbol)+'</strong><small>'+esc(x.signal||x.setup)+' • '+esc(x.timeframe||state.timeframe)+'</small></span><span class="pill">'+esc(x.valid===false?"REJECTED":x.valid===true?"VALID":"OBSERVE")+'</span></div>').join("");
