@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from itertools import product
-from typing import Any, Iterable, Mapping
+from typing import Any, Callable, Iterable, Mapping
 
 import pandas as pd
 
@@ -59,6 +59,7 @@ class StrategyExperimenter:
         parameter_grid: Mapping[str, Iterable[float]],
         strategy_name: str = "ORION",
         strategy_version: str = "experiment",
+        progress: Callable[[int, int, dict[str, float]], None] | None = None,
     ) -> StrategyExperimentResult:
         grid = self._normalise_grid(parameter_grid)
         combinations = list(product(*(grid[name] for name in grid)))
@@ -68,8 +69,11 @@ class StrategyExperimenter:
             )
 
         variants: list[StrategyVariant] = []
-        for values in combinations:
+        total = len(combinations)
+        for index, values in enumerate(combinations, start=1):
             parameters = dict(zip(grid.keys(), values))
+            if progress is not None:
+                progress(index, total, parameters)
             config = TradingEngineConfig(**parameters)
             result = Backtester(engine=TradingEngine(config=config), config=self.backtest_config).run(
                 candles, instrument=instrument
