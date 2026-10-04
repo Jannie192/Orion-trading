@@ -33,7 +33,7 @@ class DukascopyFXProvider:
     becoming an empty research dataset.
     """
 
-    BASE_URL = "https://datafeed.dukascopy.com/datafeed"
+    BASE_URLS = ("https://datafeed.dukascopy.com/datafeed", "https://www.dukascopy.com/datafeed")
 
     def __init__(self, timeout: int = 20, retries: int = 5) -> None:
         self.timeout = timeout
@@ -53,10 +53,12 @@ class DukascopyFXProvider:
         last_error: Exception | None = None
         started = time.monotonic()
         for attempt in range(1, self.retries + 1):
+            base_url = self.BASE_URLS[(attempt - 1) % len(self.BASE_URLS)]
+            request_url = url.replace("https://datafeed.dukascopy.com/datafeed", base_url, 1)
             attempt_started = time.monotonic()
             try:
-                _LOG.info("Dukascopy download start attempt=%d/%d url=%s", attempt, self.retries, url)
-                response = self.session.get(url, timeout=(8, self.timeout))
+                _LOG.info("Dukascopy download start attempt=%d/%d url=%s", attempt, self.retries, request_url)
+                response = self.session.get(request_url, timeout=(8, self.timeout))
                 elapsed = time.monotonic() - attempt_started
                 if response.status_code == 404:
                     _LOG.info("Dukascopy file missing (normal for non-trading period) elapsed=%.2fs url=%s", elapsed, url)
