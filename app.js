@@ -223,13 +223,16 @@ function renderCommand(){
   const online=age!==null && age<120 && t.status!=="DEGRADED";
   const stage=t.stage||"WAITING";
   const progress=t.progress_pct==null?"—":fmt(t.progress_pct,1)+"%";
+  const broker=t.broker||{};
+  const brokerOnline=broker.connected===true;
+  const brokerMode=String(broker.mode||"paper").toUpperCase();
   const scanTime=t.last_scan_at?new Date(t.last_scan_at).toLocaleTimeString():"—";
   return '<div class="grid">'+
     '<div class="card"><div class="card-title"><h3>Bot Status</h3>'+statusPill(online?"ONLINE":"WAITING",online)+'</div><div class="hero-metric">'+esc(stage)+'</div><div class="sub">'+esc(t.message||"Waiting for Railway worker telemetry.")+'</div><div class="metric-row"><span>Heartbeat</span><strong>'+(age===null?"—":age+"s ago")+'</strong></div></div>'+
     '<div class="card"><div class="card-title"><h3>Market Scanner</h3><span class="pill">'+esc(t.provider||"DUKASCOPY")+'</span></div><div class="hero-metric">'+esc(t.instrument||"STANDBY")+'</div><div class="sub">Timeframe: '+esc(t.timeframe||"—")+' • Last scan: '+scanTime+'</div><div class="metric-row"><span>Scanner state</span><strong>'+esc(stage)+'</strong></div></div>'+
     '<div class="card"><div class="card-title"><h3>Research Engine</h3><span class="pill">STRICT GATE</span></div><div class="hero-metric">'+progress+'</div><div class="sub">500 OOS trades minimum • 75% OOS win rate minimum</div><div class="metric-row"><span>Current instrument</span><strong>'+esc(t.instrument||"—")+'</strong></div></div>'+
     '<div class="card"><div class="card-title"><h3>Risk Engine</h3>'+statusPill("LIVE LOCKED",true)+'</div><div class="hero-metric">PAPER</div><div class="sub">Live execution remains disabled.</div><div class="metric-row"><span>Provider</span><strong>'+esc(t.provider||"—")+'</strong></div></div>'+
-    '<section class="card full"><div class="card-title"><h3>Paper Trading</h3><span class="pill">LIVE SIMULATION</span></div><div class="metric-row"><span>Equity</span><strong><span class="pill">TELEMETRY</span></div><div class="metric-row"><span><strong>'+esc(t.message||"No recent activity")+'</strong><small>'+esc(t.instrument||"ORION")+' • '+esc(t.timeframe||"SYSTEM")+'</small></span><span class="pill">'+progress+'</span></div><div class="metric-row"><span>Worker status</span><strong>'+esc(t.status||"UNKNOWN")+'</strong></div></section>'+
+    '<div class="card"><div class="card-title"><h3>Broker</h3>'+statusPill(brokerOnline?"HEALTHY":"STANDBY",brokerOnline)+'</div><div class="hero-metric">'+esc(String(broker.adapter||"paper").toUpperCase())+'</div><div class="sub">Mode: '+esc(brokerMode)+' • Live: '+(broker.live_locked!==false?"LOCKED":"ENABLED")+'</div><div class="metric-row"><span>Connection</span><strong>'+esc(brokerOnline?"CONNECTED":"NOT CONNECTED")+'</strong></div></div><section class="card full"><div class="card-title"><h3>Paper Trading</h3><span class="pill">LIVE SIMULATION</span></div><div class="metric-row"><span>Equity</span><strong><span class="pill">TELEMETRY</span></div><div class="metric-row"><span><strong>'+esc(t.message||"No recent activity")+'</strong><small>'+esc(t.instrument||"ORION")+' • '+esc(t.timeframe||"SYSTEM")+'</small></span><span class="pill">'+progress+'</span></div><div class="metric-row"><span>Worker status</span><strong>'+esc(t.status||"UNKNOWN")+'</strong></div></section>'+
   '</div>';
 }
 function renderMarkets(){
