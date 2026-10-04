@@ -56,8 +56,13 @@ class BrokerManager:
         )
         try:
             connected = bool(self.adapter.health_check())
-        except Exception:
+            if not connected and self.selection.adapter == "mt5":
+                reason = "MT5_NOT_CONNECTED"
+            else:
+                reason = self.status_reason
+        except Exception as exc:
             connected = False
+            reason = f"BROKER_HEALTH_ERROR:{type(exc).__name__}"
 
         return BrokerStatus(
             adapter=self.selection.adapter,
@@ -65,7 +70,7 @@ class BrokerManager:
             connected=connected,
             live_enabled=self.selection.live_enabled,
             live_locked=locked,
-            reason=self.status_reason,
+            reason=reason,
         )
 
 
