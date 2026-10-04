@@ -1,82 +1,101 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import pandas as pd
 import requests
 
 
-_TIMEFRAME_MAP = {
-    "M15": "15m",
-    "H1": "1h",
-    "H4": "4h",
-    "D1": "1d",
+_YAHOO_SYMBOLS = {
+    "EURUSD": "EURUSD=X",
+    "GBPUSD": "GBPUSD=X",
+    "USDJPY": "JPY=X",
+    "USDCHF": "CHF=X",
+    "AUDUSD": "AUDUSD=X",
+    "USDCAD": "CAD=X",
+    "NZDUSD": "NZDUSD=X",
 }
-_STEP = {"M15": 15, "H1": 60, "H4": 240, "D1": 1440}
+
+_TIMEFRAME_INTERVAL = {"H1": "1h", "D1": "1d"}
 
 
-class BiquoteFXProvider:
-    """Broker-neutral FX OHLC provider using Biquote's public no-key endpoint."""
+class YahooFXProvider:
+    """Free, no-key Yahoo Finance historical FX provider for research/backtesting.
 
-    BASE_URL = "https://biquote.io/api"
+    H4 is built causally from H1 bars. M15 is intentionally unsupported here because
+    Yahoo's intraday retention is limited; the research bootstrap currently uses H1/H4/D1.
+    """
 
-    def __init__(self, timeout: int = 30, page_limit: int = 1000) -> None:
+    BASE_URL = "https://query1.finance.yahoo.com/v8/finance/chart"
+
+    def __init__(self, timeout: int = 30) -> None:
         self.timeout = timeout
-        self.page_limit = min(max(page_limit, 1), 1000)
+
+    def _fetch(self, yahoo_symbol: str, interval: str, start: datetime, end: datetime) -> pd.DataFrame:
+        response = requests.get(
+            f"{self.BASE_URL}/{yahoo_symbol}",
+            params={
+                "period1": int(start.timestamp()),
+                "period2": int(end.timestamp()),
+                "interval": interval,
+                "events": "history",
+                "includeAdjustedClose": "true",
+            },
+            timeout=self.timeout,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        if not response.ok:
+            raise RuntimeError(f"Yahoo Finance request failed ({response.status_code}): {response.text[:500]}")
+        payload = response.json()
+        result = (payload.get("chart") or {}).get("result") or []
+        if not result:
+            error = (payload.get("chart") or {}).get("error")
+            raise RuntimeError(f"Yahoo Finance returned no data: {error}")
+        node = result[0]
+        timestamps = node.get("timestamp") or []
+        quote = ((node.get("indicators") or {}).get("quote") or [{}])[0]
+        if not timestamps:
+            return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+        frame = pd.DataFrame({
+            "open": quote.get("open", []),
+            "high": quote.get("high", []),
+            "low": quote.get("low", []),
+            "close": quote.get("close", []),
+            "volume": quote.get("volume", []),
+        }, index=pd.to_datetime(timestamps, unit="s", utc=True))
+        frame = frame[~frame.index.duplicated(keep="last")].sort_index()
+        for column in ("open", "high", "low", "close", "volume"):
+            frame[column] = pd.to_numeric(frame[column], errors="coerce")
+        return frame.dropna(subset=["open", "high", "low", "close"])
 
     def candles(self, instrument: str, timeframe: str, start: datetime, end: datetime) -> pd.DataFrame:
+        instrument = instrument.upper()
         timeframe = timeframe.upper()
-        interval = _TIMEFRAME_MAP.get(timeframe)
-        if not interval:
-            raise ValueError(f"Unsupported timeframe: {timeframe}")
-
+        yahoo_symbol = _YAHOO_SYMBOLS.get(instrument)
+        if not yahoo_symbol:
+            raise ValueError(f"Unsupported FX instrument: {instrument}")
         start = start.astimezone(timezone.utc)
         end = end.astimezone(timezone.utc)
-        cursor = start
-        frames: list[pd.DataFrame] = []
 
-        while cursor < end:
-            response = requests.get(
-                f"{self.BASE_URL}/{instrument.upper()}/ohlc",
-                params={
-                    "interval": interval,
-                    "limit": self.page_limit,
-                    "from": cursor.isoformat().replace("+00:00", "Z"),
-                    "to": end.isoformat().replace("+00:00", "Z"),
-                },
-                timeout=self.timeout,
-            )
-            if not response.ok:
-                raise RuntimeError(
-                    f"Biquote request failed ({response.status_code}): {response.text[:500]}"
-                )
-            payload = response.json()
-            bars = payload.get("bars") or []
-            if not bars:
-                break
+        if timeframe == "H4":
+            hourly = self._fetch(yahoo_symbol, "1h", start, end)
+            if hourly.empty:
+                return hourly
+            # Preserve OHLC semantics while aggregating four hourly bars from UTC boundaries.
+            frame = hourly.resample("4h", label="left", closed="left").agg({
+                "open": "first",
+                "high": "max",
+                "low": "min",
+                "close": "last",
+                "volume": "sum",
+            }).dropna(subset=["open", "high", "low", "close"])
+            return frame[(frame.index >= start) & (frame.index < end)]
 
-            frame = pd.DataFrame(bars)
-            timestamp_column = "openTime" if "openTime" in frame else "timestamp"
-            frame[timestamp_column] = pd.to_datetime(frame[timestamp_column], utc=True)
-            frame = frame.set_index(timestamp_column).sort_index()
-            frame = frame[(frame.index >= cursor) & (frame.index < end)]
-            if frame.empty:
-                break
+        interval = _TIMEFRAME_INTERVAL.get(timeframe)
+        if not interval:
+            raise ValueError(f"Unsupported timeframe: {timeframe}")
+        return self._fetch(yahoo_symbol, interval, start, end)
 
-            for column in ("open", "high", "low", "close"):
-                frame[column] = pd.to_numeric(frame[column], errors="coerce")
-            frame["volume"] = pd.to_numeric(frame.get("volume", 0.0), errors="coerce").fillna(0.0)
-            frames.append(frame[["open", "high", "low", "close", "volume"]].dropna())
 
-            last = frame.index[-1].to_pydatetime()
-            next_cursor = last + timedelta(minutes=_STEP[timeframe])
-            if next_cursor <= cursor:
-                break
-            cursor = next_cursor
-            if len(frame) < self.page_limit:
-                break
-
-        if not frames:
-            return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
-        result = pd.concat(frames).sort_index()
-        return result[~result.index.duplicated(keep="last")]
+# Backward-compatible alias for existing imports while the repository transitions.
+BiquoteFXProvider = YahooFXProvider
