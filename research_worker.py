@@ -10,6 +10,7 @@ from datetime import datetime, timezone, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
+import logging
 import requests
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -32,6 +33,8 @@ RESEARCH_TIMEFRAMES = tuple(x.strip().upper() for x in os.getenv("ORION_RESEARCH
 RESEARCH_INSTRUMENTS = tuple(x.strip().upper() for x in os.getenv("ORION_RESEARCH_INSTRUMENTS", "EURUSD,GBPUSD,USDJPY,USDCHF,AUDUSD,USDCAD,NZDUSD").split(",") if x.strip())
 RESEARCH_INTERVAL_SECONDS = int(os.getenv("ORION_RESEARCH_INTERVAL_SECONDS", "8"))
 HISTORICAL_CUTOFF_HOURS = int(os.getenv("ORION_HISTORICAL_CUTOFF_HOURS", "72"))
+
+logging.basicConfig(level=os.getenv("ORION_LOG_LEVEL", "INFO").upper(), format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
 
 def _now():
@@ -76,7 +79,7 @@ def _research_bootstrap():
         from orion_trading.strategy_experiments import StrategyExperimenter
         from orion_trading.supabase_market_store import SupabaseMarketDataStore
         from orion_trading.twelve_data_provider import DukascopyFXProvider
-        provider = DukascopyFXProvider()
+        provider = DukascopyFXProvider(timeout=int(os.getenv("ORION_DUKASCOPY_TIMEOUT_SECONDS", "20")), retries=int(os.getenv("ORION_DUKASCOPY_RETRIES", "5")))
         store = SupabaseMarketDataStore()
         manager = DatasetManager(store, provider, "dukascopy", fetch_limit=10000)
         cycle = ResearchCycle(
@@ -95,7 +98,7 @@ def _research_bootstrap():
         end = datetime.now(timezone.utc) - timedelta(hours=HISTORICAL_CUTOFF_HOURS)
         start = end - timedelta(days=RESEARCH_DAYS)
         print(
-            f"Research bootstrap starting: instruments={len(RESEARCH_INSTRUMENTS)} "
+            f"Research bootstrap starting: total_runs={len(RESEARCH_INSTRUMENTS) * len(RESEARCH_TIMEFRAMES)} instruments={len(RESEARCH_INSTRUMENTS)} "
             f"timeframes={RESEARCH_TIMEFRAMES} days={RESEARCH_DAYS} "
             f"historical_end={end.isoformat()} provider=dukascopy",
             flush=True,
