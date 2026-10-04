@@ -1,5 +1,6 @@
 const state={view:"overview",assets:["EURUSD","GBPUSD","USDJPY","USDCHF","AUDUSD","USDCAD","NZDUSD"],timeframe:"1H",mode:"research",api:"/api/paper-state",scanApi:"/api/paper-scan",botApi:"/api/bot-status",panels:JSON.parse(localStorage.getItem("orion-panels")||'{"equity":true,"signals":true,"research":true,"risk":true,"markets":true,"activity":true}')};
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const botTelemetry={};
 const paper={initial_equity:10000,equity:10000,closed_trades:0,realized_pnl:0};
 let apiOnline=false,scanOnline=false,scanData={results:[],scanned_at:null},btReplayTimer=null,btReplayState=null,strategyHistory={versions:[],experiments:[]},researchIterations=[],lastLabRun=null;
 
