@@ -34,6 +34,7 @@ class DukascopyFXProvider:
     """
 
     BASE_URLS = ("https://datafeed.dukascopy.com/datafeed", "https://www.dukascopy.com/datafeed")
+    BASE_URL = BASE_URLS[0]
 
     def __init__(self, timeout: int = 20, retries: int = 5) -> None:
         self.timeout = timeout
