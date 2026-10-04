@@ -40,8 +40,16 @@ logging.basicConfig(level=os.getenv("ORION_LOG_LEVEL", "INFO").upper(), format="
 def _now():
     return datetime.now(timezone.utc).isoformat()
 
+def _telemetry(**kwargs):
+    try:
+        from orion_trading.bot_telemetry import heartbeat
+        heartbeat(**kwargs)
+    except Exception:
+        pass
+
 
 def _paper_cycle():
+    _telemetry(stage="PAPER_IDLE", message="Paper trading cycle waiting", provider="dukascopy")
     try:
         from orion_trading.paper_candidate_runner import PaperCandidateRunner
         from orion_trading.paper_performance import PaperPerformanceEngine
@@ -97,6 +105,7 @@ def _research_bootstrap():
         # 72h behind now so the requested 365-day window remains fully historical.
         end = datetime.now(timezone.utc) - timedelta(hours=HISTORICAL_CUTOFF_HOURS)
         start = end - timedelta(days=RESEARCH_DAYS)
+        _telemetry(stage="RESEARCH_START", provider="dukascopy", message="Research bootstrap starting", progress_pct=0)
         print(
             f"Research bootstrap starting: total_runs={len(RESEARCH_INSTRUMENTS) * len(RESEARCH_TIMEFRAMES)} instruments={len(RESEARCH_INSTRUMENTS)} "
             f"timeframes={RESEARCH_TIMEFRAMES} days={RESEARCH_DAYS} "
@@ -106,7 +115,9 @@ def _research_bootstrap():
         for timeframe in RESEARCH_TIMEFRAMES:
             for instrument in RESEARCH_INSTRUMENTS:
                 try:
+                    _telemetry(stage="RESEARCH_DATA", instrument=instrument, timeframe=timeframe, provider="dukascopy", message="Synchronizing historical market data")
                     result = cycle.run((instrument,), (timeframe,), start, end)[0]
+                    _telemetry(stage="RESEARCH_COMPLETE", instrument=instrument, timeframe=timeframe, provider="dukascopy", message=f"Research complete: {result.approval_status or 'RESEARCH'}")
                     print(
                         f"Research complete {instrument}/{timeframe}: rows={result.data_rows} "
                         f"downloaded={result.data_downloaded} approval={result.approval_status} "
@@ -114,8 +125,10 @@ def _research_bootstrap():
                         flush=True,
                     )
                 except Exception as exc:
+                    _telemetry(status="DEGRADED", stage="RESEARCH_ERROR", instrument=instrument, timeframe=timeframe, provider="dukascopy", message=str(exc))
                     print(f"Research failed {instrument}/{timeframe}: {exc}", flush=True)
                 time.sleep(RESEARCH_INTERVAL_SECONDS)
+        _telemetry(stage="RESEARCH_IDLE", provider="dukascopy", message="Research bootstrap finished", progress_pct=100)
         print("Research bootstrap finished", flush=True)
     except Exception as exc:
         print(f"Research bootstrap disabled/failed: {exc}", flush=True)
@@ -232,6 +245,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    _telemetry(stage="ONLINE", provider="dukascopy", message="Railway research worker online", progress_pct=0)
     print(f"ORION research worker listening on {HOST}:{PORT}", flush=True)
     threading.Thread(target=_poll_queue, daemon=True).start()
     threading.Thread(target=_paper_cycle, daemon=True).start()
