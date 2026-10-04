@@ -17,7 +17,10 @@ from orion_trading.supabase_paper_store import SupabasePaperStore
 
 def snapshot():
     if os.getenv("SUPABASE_URL") and os.getenv("SUPABASE_SERVICE_ROLE_KEY"):
-        return SupabasePaperStore().snapshot()
+        store = SupabasePaperStore()
+        snap = store.snapshot()
+        snap["recent_trades"] = store.closed_trades()[:25]
+        return snap
     return {
         **PaperStateAdapter().snapshot(),
         "persistence": "memory",
