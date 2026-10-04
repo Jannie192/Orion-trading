@@ -33,7 +33,7 @@ class DukascopyFXProvider:
     becoming an empty research dataset.
     """
 
-    BASE_URLS = ("https://datafeed.dukascopy.com/datafeed", "https://www.dukascopy.com/datafeed")
+    BASE_URLS = ("https://www.dukascopy.com/datafeed", "https://datafeed.dukascopy.com/datafeed")
     BASE_URL = BASE_URLS[0]
 
     def __init__(self, timeout: int = 20, retries: int = 5) -> None:
@@ -67,9 +67,9 @@ class DukascopyFXProvider:
                 if response.status_code in {429, 500, 502, 503, 504}:
                     retry_after = response.headers.get("Retry-After")
                     try:
-                        delay = float(retry_after) if retry_after else min(2.0 ** (attempt - 1), 15.0)
+                        delay = float(retry_after) if retry_after else min(15.0 * (2.0 ** (attempt - 1)), 120.0)
                     except ValueError:
-                        delay = min(2.0 ** (attempt - 1), 15.0)
+                        delay = min(15.0 * (2.0 ** (attempt - 1)), 120.0)
                     last_error = RuntimeError(f"HTTP {response.status_code}")
                     _LOG.warning(
                         "Dukascopy transient HTTP %s attempt=%d/%d elapsed=%.2fs retry_in=%.1fs",
@@ -93,7 +93,7 @@ class DukascopyFXProvider:
                     attempt, self.retries, elapsed, exc,
                 )
                 if attempt < self.retries:
-                    time.sleep(min(2.0 ** (attempt - 1), 15.0))
+                    time.sleep(min(15.0 * (2.0 ** (attempt - 1)), 120.0))
         total = time.monotonic() - started
         raise RuntimeError(
             f"Dukascopy request failed after {self.retries} attempts "
