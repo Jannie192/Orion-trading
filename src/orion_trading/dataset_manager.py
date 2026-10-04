@@ -19,6 +19,7 @@ class MarketDataStore(Protocol):
         start_at: str | None = None,
         end_at: str | None = None,
         limit: int = 10000,
+        provider: str | None = None,
     ) -> pd.DataFrame: ...
 
     def save(
@@ -141,6 +142,7 @@ class DatasetManager:
                 start_at=start.isoformat(),
                 end_at=end.isoformat(),
                 limit=self.fetch_limit,
+                provider=self.provider_name,
             )
         )
         gaps = find_gaps(existing.index, start, end, timeframe)
@@ -152,8 +154,7 @@ class DatasetManager:
             )
             if frame.empty:
                 raise ValueError(
-                    f"Provider returned no data for {instrument}/{timeframe} "
-                    f"gap {gap.start.isoformat()} to {gap.end.isoformat()}"
+                    f"Provider returned no data for {instrument}/{timeframe} gap {gap.start.isoformat()} to {gap.end.isoformat()}"
                 )
             report = validate_candles(frame, timeframe)
             if not report.passed:
@@ -171,13 +172,13 @@ class DatasetManager:
                 start_at=start.isoformat(),
                 end_at=end.isoformat(),
                 limit=self.fetch_limit,
+                provider=self.provider_name,
             )
         )
         final_report = validate_candles(final, timeframe) if not final.empty else None
         if final_report is None or not final_report.passed:
             raise ValueError(
-                f"Final data quality failed for {instrument}/{timeframe}: "
-                f"{final_report}"
+                f"Final data quality failed for {instrument}/{timeframe}: {final_report}"
             )
 
         self.store.record_dataset(
