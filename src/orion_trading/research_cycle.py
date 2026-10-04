@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import time
 from typing import Iterable, Mapping, Protocol
 
 from .backtest import BacktestResult, Backtester
@@ -50,15 +51,22 @@ class ResearchCycle:
         results: list[ResearchResult] = []
         for instrument in instruments:
             for timeframe in timeframes:
+                started = time.monotonic()
+                print(f"Research stage {instrument}/{timeframe}: data sync starting", flush=True)
                 sync = self.dataset_manager.sync(instrument, timeframe, start, end)
+                print(f"Research stage {instrument}/{timeframe}: data sync complete rows={sync.final_rows} downloaded={sync.downloaded_rows} gaps={sync.gaps_filled} elapsed={time.monotonic()-started:.1f}s", flush=True)
                 start_at = sync.requested_start.astimezone(timezone.utc).isoformat()
                 end_at = sync.requested_end.astimezone(timezone.utc).isoformat()
+                stage_started = time.monotonic()
+                print(f"Research stage {instrument}/{timeframe}: baseline backtest starting", flush=True)
                 backtest = self.backtester.run_from_store(self.dataset_manager.store, instrument=instrument, timeframe=timeframe, start_at=start_at, end_at=end_at)
+                print(f"Research stage {instrument}/{timeframe}: baseline backtest complete trades={len(backtest.trades)} return={backtest.total_return_pct:.2f}% elapsed={time.monotonic()-stage_started:.1f}s", flush=True)
                 result = ResearchResult(instrument=instrument, timeframe=timeframe, data_rows=sync.final_rows, data_downloaded=sync.downloaded_rows, gaps_filled=sync.gaps_filled, backtest=backtest)
 
                 if self.experimenter is not None:
                     grid = self.experiment_grids.get(instrument) or self.experiment_grids.get("*")
                     if grid:
+                        print(f"Research stage {instrument}/{timeframe}: experiment setup/load starting", flush=True)
                         candles = self.dataset_manager.store.load(
                             instrument, timeframe, start_at=start_at, end_at=end_at,
                             limit=self.dataset_manager.fetch_limit, provider=self.dataset_manager.provider_name,
@@ -67,20 +75,32 @@ class ResearchCycle:
                             candles, instrument=instrument, timeframe=timeframe,
                             parameter_grid=grid, strategy_name=self.strategy_name,
                             strategy_version=f"{self.strategy_version}-experiment-{instrument}-{timeframe.upper()}",
+                            progress=lambda index, total, parameters: print(
+                                f"Research stage {instrument}/{timeframe}: experiment {index}/{total} parameters={parameters}", flush=True
+                            ),
                         )
+                        print(f"Research stage {instrument}/{timeframe}: experiments complete variants={experiment.variant_count}", flush=True)
+                        print(f"Research stage {instrument}/{timeframe}: walk-forward + Monte Carlo starting", flush=True)
                         validation = validate_experiment(
                             candles, experiment, start=sync.requested_start,
                             end=sync.requested_end, config=self.validation_config,
+                            progress=lambda fold, total, status: print(
+                                f"Research stage {instrument}/{timeframe}: validation fold={fold}/{total} status={status}", flush=True
+                            ),
                         )
+                        print(f"Research stage {instrument}/{timeframe}: validation complete approval={(validation.get('approval') or {}).get('status')} folds={validation.get('fold_count')} oos_trades={validation.get('oos_trade_count')}", flush=True)
                         experiment_id = None
                         paper_candidate_id = None
                         approval_status = (validation.get("approval") or {}).get("status")
                         if self.experiment_store is not None:
+                            print(f"Research stage {instrument}/{timeframe}: Supabase experiment save starting", flush=True)
                             experiment_id = self.experiment_store.record_strategy_experiment(
                                 experiment=experiment, days=max((sync.requested_end - sync.requested_start).days, 0),
                                 validation=validation,
                             )
+                            print(f"Research stage {instrument}/{timeframe}: Supabase experiment saved id={experiment_id}", flush=True)
                             if approval_status == "PASS":
+                                print(f"Research stage {instrument}/{timeframe}: promoting paper candidate", flush=True)
                                 paper_candidate_id = self.experiment_store.promote_paper_candidate(
                                     experiment=experiment, experiment_id=experiment_id,
                                     validation=validation, days=max((sync.requested_end - sync.requested_start).days, 0),
@@ -94,10 +114,12 @@ class ResearchCycle:
                         )
 
                 if self.result_store is not None:
+                    print(f"Research stage {instrument}/{timeframe}: research result save starting", flush=True)
                     run_id = self.result_store.record_research_result(
                         strategy_name=self.strategy_name, strategy_version=self.strategy_version,
                         result=result, start_at=start_at, end_at=end_at,
                     )
+                    print(f"Research stage {instrument}/{timeframe}: research result saved id={run_id}", flush=True)
                     result = ResearchResult(
                         instrument=result.instrument, timeframe=result.timeframe,
                         data_rows=result.data_rows, data_downloaded=result.data_downloaded,
