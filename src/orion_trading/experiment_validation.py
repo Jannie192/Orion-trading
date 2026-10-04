@@ -202,7 +202,7 @@ def validate_experiment(
 @dataclass(frozen=True)
 class CandidateApprovalConfig:
     min_folds: int = 3
-    min_oos_trades: int = 30
+    min_oos_trades: int = 500
     min_oos_win_rate_pct: float = 75.0
     min_median_net_r: float = 0.0
     min_p05_net_r: float = 0.0
