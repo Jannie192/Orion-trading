@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from itertools import product
 from typing import Any, Iterable, Mapping
@@ -37,23 +38,13 @@ class StrategyExperimentResult:
 
 
 class StrategyExperimenter:
-    """Run controlled parameter experiments against the existing causal backtester.
-
-    The experimenter deliberately varies only TradingEngineConfig values. It does
-    not alter signal logic or market data, so every candidate remains comparable
-    under the same backtesting semantics.
-    """
+    """Run controlled parameter experiments against the existing causal backtester."""
 
     SUPPORTED_PARAMETERS = frozenset(
         {"risk_per_trade_pct", "atr_stop_multiple", "reward_multiple", "min_signal_score"}
     )
 
-    def __init__(
-        self,
-        *,
-        backtest_config: BacktestConfig | None = None,
-        max_variants: int = 100,
-    ) -> None:
+    def __init__(self, *, backtest_config: BacktestConfig | None = None, max_variants: int = 100) -> None:
         if max_variants <= 0:
             raise ValueError("max_variants must be positive")
         self.backtest_config = backtest_config or BacktestConfig()
@@ -73,24 +64,18 @@ class StrategyExperimenter:
         combinations = list(product(*(grid[name] for name in grid)))
         if len(combinations) > self.max_variants:
             raise ValueError(
-                f"parameter grid creates {len(combinations)} variants; "
-                f"max_variants is {self.max_variants}"
+                f"parameter grid creates {len(combinations)} variants; max_variants is {self.max_variants}"
             )
 
         variants: list[StrategyVariant] = []
         for values in combinations:
             parameters = dict(zip(grid.keys(), values))
             config = TradingEngineConfig(**parameters)
-            engine = TradingEngine(config=config)
-            result = Backtester(engine=engine, config=self.backtest_config).run(
+            result = Backtester(engine=TradingEngine(config=config), config=self.backtest_config).run(
                 candles, instrument=instrument
             )
             variants.append(
-                StrategyVariant(
-                    parameters=parameters,
-                    result=result,
-                    score=self.score(result),
-                )
+                StrategyVariant(parameters=parameters, result=result, score=self.score(result))
             )
 
         ordered = sorted(
@@ -118,29 +103,23 @@ class StrategyExperimenter:
             instrument=instrument,
             timeframe=timeframe.upper(),
             variants=ranked,
-            best=ranked[0] if ranked and ranked[0].score != float("-inf") else None,
+            best=ranked[0] if ranked and math.isfinite(ranked[0].score) else None,
         )
 
     @staticmethod
     def score(result: BacktestResult) -> float:
-        """Transparent research score: return adjusted for drawdown and sample size.
-
-        The score is not a trading guarantee. It is only a deterministic ordering
-        mechanism for deciding which variants should proceed to deeper validation.
-        """
+        """Transparent research score used only for deterministic candidate ordering."""
         if not result.trades:
             return float("-inf")
         drawdown = max(result.max_drawdown_pct, 0.01)
         sample_factor = min(len(result.trades) / 20.0, 1.0)
-        return (result.total_return_pct / drawdown) * sample_factor
+        score = (result.total_return_pct / drawdown) * sample_factor
+        return score if math.isfinite(score) else float("-inf")
 
     @classmethod
-    def _normalise_grid(
-        cls, parameter_grid: Mapping[str, Iterable[float]]
-    ) -> dict[str, tuple[float, ...]]:
+    def _normalise_grid(cls, parameter_grid: Mapping[str, Iterable[float]]) -> dict[str, tuple[float, ...]]:
         if not parameter_grid:
             raise ValueError("parameter_grid must contain at least one parameter")
-
         normalised: dict[str, tuple[float, ...]] = {}
         for name, values in parameter_grid.items():
             if name not in cls.SUPPORTED_PARAMETERS:
@@ -155,24 +134,27 @@ class StrategyExperimenter:
 
 
 def serialise_experiment(result: StrategyExperimentResult) -> dict[str, Any]:
-    """Convert an experiment result into JSON-compatible research metadata."""
+    """Convert an experiment result into strictly JSON-compatible research metadata."""
+
+    def finite_or_none(value: float) -> float | None:
+        return float(value) if math.isfinite(float(value)) else None
 
     def variant_payload(variant: StrategyVariant) -> dict[str, Any]:
         bt = variant.result
         return {
             "rank": variant.rank,
             "parameters": variant.parameters,
-            "score": variant.score,
-            "initial_equity": bt.initial_equity,
-            "final_equity": bt.final_equity,
-            "total_return_pct": bt.total_return_pct,
-            "max_drawdown_pct": bt.max_drawdown_pct,
+            "score": finite_or_none(variant.score),
+            "initial_equity": finite_or_none(bt.initial_equity),
+            "final_equity": finite_or_none(bt.final_equity),
+            "total_return_pct": finite_or_none(bt.total_return_pct),
+            "max_drawdown_pct": finite_or_none(bt.max_drawdown_pct),
             "trade_count": len(bt.trades),
             "wins": bt.wins,
             "losses": bt.losses,
-            "win_rate_pct": bt.win_rate_pct,
-            "profit_factor": None if bt.profit_factor == float("inf") else bt.profit_factor,
-            "profit_factor_infinite": bt.profit_factor == float("inf"),
+            "win_rate_pct": finite_or_none(bt.win_rate_pct),
+            "profit_factor": None if not math.isfinite(bt.profit_factor) else float(bt.profit_factor),
+            "profit_factor_infinite": math.isinf(bt.profit_factor),
         }
 
     return {
