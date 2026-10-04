@@ -23,7 +23,7 @@ from orion_trading.models import Direction
 from orion_trading.trade_planner import plan_trade
 from orion_trading.supabase_paper_store import SupabasePaperStore
 
-INSTRUMENTS = ("BTCUSDT", "ETHUSDT")
+INSTRUMENTS = ("EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD")
 TIMEFRAMES = ("H4", "H1", "M15")
 
 
@@ -45,9 +45,10 @@ def _candidate(candidate):
 
 def scan_and_persist():
     store = SupabasePaperStore()
-    provider_name = os.getenv("ORION_DATA_PROVIDER", "binance").lower()
+    provider_name = os.getenv("ORION_DATA_PROVIDER", "dukascopy").lower()
     if provider_name == "binance":
-        os.environ["ORION_DATA_PROVIDER"] = "binance"
+        provider_name = "dukascopy"
+        os.environ["ORION_DATA_PROVIDER"] = "dukascopy"
     provider = provider_from_env()
     end = datetime.now(timezone.utc)
     start = end - timedelta(days=14)
